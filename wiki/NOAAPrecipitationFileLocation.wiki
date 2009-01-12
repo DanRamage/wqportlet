@@ -2,7 +2,7 @@
 
 =Hourly quality-controlled, multi-sensor (radar and rain gauge) precipitation estimates=
   * URL
-  www.srh.noaa.gov/rfcshare/p_download_hourly/
+  [http://www.srh.noaa.gov/rfcshare/p_download_hourly/]
 
 
   The format to retrieve the files automatically
