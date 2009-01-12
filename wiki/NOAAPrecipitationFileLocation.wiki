@@ -1,9 +1,13 @@
 #Information dealing with the where/how of automating retrieval of the hourly precip files.
 
 =Hourly quality-controlled, multi-sensor (radar and rain gauge) precipitation estimates=
-  *URL
+  * URL
   www.srh.noaa.gov/rfcshare/p_download_hourly/
+
+
   The format to retrieve the files automatically
   /YYYY/YYYYMM/YYYYMMDD/nws_precip_YYYYMMDDHH.tar.gz
+
+
   For the hours 00 is used instead of 24.
   Only the last 14days are stored online.
