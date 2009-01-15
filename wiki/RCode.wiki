@@ -1,0 +1,81 @@
+#summary some sample R code used in project
+
+= Sample 1 =
+
+from Heath's email posted Jan 14, 2009
+
+{{{
+library( RSQLite )
+#help(SQLite)
+#Invoke the SQLite engine
+SQLite( 10, 20000, FALSE, FALSE )
+
+#Create the database driver.
+DB <- dbDriver("SQLite")
+
+#NMB2 model:
+#Connect the driver to the database file.
+Con <- dbConnect(DB, "C:\\Heath\\Projects\\SCBeaches\\Data\\DHEC\\dhec.db" )
+
+#select all data; sort the results ascending.
+RS <- dbSendQuery(Con, "SELECT * FROM dhec_beach WHERE station = 'WAC-004' or station = 'WAC-005' or
+       station = 'WAC-005A' or station = 'WAC-006' or station = 'WAC-007'
+       ORDER BY insp_date ASC;" )
+
+#Get the data from the results set.
+NMB2.Dat <- fetch(RS)
+
+#names(NMB2.Dat)
+#adjust data types where necessary
+NMB2.Dat$wind_curr <-as.factor(NMB2.Dat$wind_curr)
+NMB2.Dat$tide<- as.factor(NMB2.Dat$tide)
+NMB2.Dat$weather<-as.factor(NMB2.Dat$weather)
+
+library(rpart)
+#help(rpart)
+
+#Create tree models
+NMB2Tree<-rpart(log10(etcoc)~   station +
+       + salinity
+       + rainfall
+       + tide
+       + wind_curr
+       + weather,
+       data=NMB2.Dat, method='anova', minsplit=20, cp=.01)
+
+       png("C:/Heath/Projects/SCBeaches/RCode/Figures/NMB2Tree.png")
+       plot(NMB2Tree)
+       text(NMB2Tree, cex=.75, pretty= '3', xpd=T, use.n=T)
+       dev.off()
+       #summary(NMB2Tree)
+       #printcp(NMB2Tree)
+       png("C:/Heath/Projects/SCBeaches/RCode/Figures/NMB2TreeCP.png")
+       plotcp(NMB2Tree)
+       dev.off()
+
+       png("C:/Heath/Projects/SCBeaches/RCode/Figures/NMB2TreeRsq.png")
+       par(mfrow = c(1,2))
+       rsq.rpart(NMB2Tree)
+       dev.off()
+
+# Adjust Tree based on diagnostic info
+NMB2Tree.prune<-prune(NMB2Tree, cp=.02)
+       png("C:/Heath/Projects/SCBeaches/RCode/Figures/NMB2TreePrune.png")
+       plot(NMB2Tree.prune)
+       text(NMB2Tree.prune, cex=.75, pretty= '3', xpd=T, use.n=T)
+       #summary(NMB2Tree.prune)
+       dev.off()
+       #predict(NMB2Tree.prune)
+
+       png("C:/Heath/Projects/SCBeaches/RCode/Figures/NMB2TreePredict.png")
+       par(pty='s')
+       plot(predict(NMB2Tree.prune),log10(NMB2.Dat$etcoc),
+               xlab="Predicted Log10 Etcoc", ylab="Observed Log10 Etcoc",
+               xlim=c(0,max(predict(NMB2Tree.prune),log10(NMB2.Dat$etcoc))),
+               ylim=c(0,max(predict(NMB2Tree.prune),log10(NMB2.Dat$etcoc))))
+       abline(h=log10(104), lty=2)
+       abline(v=log10(104), lty=2)
+       dev.off()
+}}}
+
+----
