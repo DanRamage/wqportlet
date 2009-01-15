@@ -1,3 +1,4 @@
+import sys
 from urllib2 import Request, urlopen, URLError, HTTPError
 import time
 import re
@@ -75,10 +76,9 @@ class remoteFileDownload:
   def writeFetchLogFile(self, fileName, dateTime):
     try:
       strFilePath = self.fetchLogDir + fileName
-      
-      fetchLog = open( strFilePath, 'w' )
-      
+      fetchLog = open( strFilePath, 'w' )      
       fetchLog.write( ( "%d\n" % dateTime ) )
+      self.logMsg( "writeFetchLogFile::Creating fetchlog: %s Modtime: %d" % (strFilePath,dateTime) )
       return(1)
     except IOError, e:
       self.strLastError = str(e)
@@ -104,10 +104,14 @@ class remoteFileDownload:
       if( len(ModDate) ):
         ModDate = float( ModDate )
 
+      self.logMsg( "checkFetchLogFile::Fetchlog %s exists. Modtime: %d" % (strFilePath,ModDate) )
+
     except IOError, e:
       self.strLastError = str(e)
       if( e.errno != 2 ):
         self.logMsg( self.strLastError )
+      else:
+        self.logMsg( "checkFetchLogFile::Fetchlog: %s does not exist" % (strFilePath) )
 
     return(ModDate)
 
@@ -126,13 +130,13 @@ class remoteFileDownload:
   #    newer, it will be downloaded. 0 is a simple check to see if the file has already been downloaded by looking to see if the fetch log
   #    file for that file exists.
   #Return:
-  #  1 for a file downloaded, otherwise 0. -1 on error.
+  #  The filepath of the filedownloaded, otherwise an empty string.
   ####################################################################################################################
-def getFile( self, remoteFileName, destFileName, compareModDate ):
-    retVal = 0
+  def getFile( self, remoteFileName, destFileName, compareModDate ):
+    retVal = ''
     try:    
       self.logMsg( '-----------------------------------------------------------------' )
-      self.logMsg( 'Processing file: ' + remoteFileName + ' from URL: ' + self.baseURL )
+      self.logMsg( 'getFile::Processing file: ' + remoteFileName + ' from URL: ' + self.baseURL )
       
       strUrl = self.baseURL + remoteFileName
       req = Request(strUrl)   
@@ -157,44 +161,48 @@ def getFile( self, remoteFileName, destFileName, compareModDate ):
         ModDate = time.mktime(date)
           
         logFileDate = self.checkFetchLogFile(strFetchLogFile)
-
+        
+        writeFetchLogFile = 0
         #If logFileDate the fetch log file doesn't exist, so we need to create it.
-        if( logFileDate == -1 ):          
-          self.writeFetchLogFile(strFetchLogFile, ModDate)
+        if( logFileDate == -1 ):
+          writeFetchLogFile = 1    
           
         if( compareModDate ):
           if( ModDate <= logFileDate ):
             downloadFile = 0
-          else:
-            Msg = "File modification date is now: %.1f, previous mod date: %.1f" % (ModDate, logFileDate)
-            self.logMsg( Msg )
-            self.writeFetchLogFile(strFetchLogFile, ModDate)
+          else:            
+            self.logMsg( ("getFile::File modification date is now: %.1f, previous mod date: %.1f" % (ModDate, logFileDate)) )
+            writeFetchLogFile = 1
+            
         #Not comparing file mod dates, but need to see if we had grabbed that file already. 
         else:
           #If we got a logFileDate back from the check above, we already have the file and don't
           #need to dl it.
           if( logFileDate != -1 ):
             downloadFile = 0
-             
+            
+      if( writeFetchLogFile ):       
+        self.writeFetchLogFile(strFetchLogFile, ModDate)
+        
       if( downloadFile ):
         strDestFilePath = self.destDir + remoteFileName          
-        self.logMsg( 'Downloading file: ' +  strDestFilePath )
+        self.logMsg( 'getFile::Downloading file: ' +  strDestFilePath )
         DestFile = open(strDestFilePath, "w" + self.fileMode)
         #Write to our local file
         DestFile.write(htmlFile.read())
         DestFile.close()
-        retVal = 1
+        retVal = strDestFilePath
         
     #handle errors
     except HTTPError, e:
+      self.strLastError = "getFile::HTTP Error:",e.code , url
       print "HTTP Error:",e.code , url
-      return( -1 )
     except URLError, e:
+      self.strLastError = "getFile::URL Error:",e.reason , url
       print "URL Error:",e.reason , url
-      return( -1 )
     except Exception, E:  
+      self.strLastError = "getFile::Error:",str(E)
       print "Error:",str(E)
-      return(-1)
 
     if( len(self.strLastError ) ):
       self.logMsg( self.strLastError )
@@ -234,7 +242,7 @@ def getFile( self, remoteFileName, destFileName, compareModDate ):
       print "Error:",str(E)
       return(-1)
     
-    if( len(self.strLastError ) ):
+    if( len( self.strLastError ) ):
       self.logMsg( self.strLastError )
     
     return(0)
@@ -247,26 +255,53 @@ def getFile( self, remoteFileName, destFileName, compareModDate ):
     if( self.log ):
       print( msg )
 
-if __name__ == '__main__':
-  
-  baseURL = 'http://www.srh.noaa.gov/rfcshare/p_download_hourly/'
-  destDir = 'c:\\temp\\nws_precip\\'
-  strFetchDir= 'c:\\temp\\nws_precip\\fetchlog\\'
-  logMsgs = 1
-  #The format for the directory is /YYYY/YYYYMM/YYYYMMDD/
-  #The format for the filename is nws_precip_YYYYMMDDHH.tar.gz where HH is the hour, GMT time.
-  #Build the various parts of the directory/file name to get the precip file.
-  strY = time.strftime('%Y', time.gmtime())
-  strYM= time.strftime('%Y%m', time.gmtime())
-  strYMD  = time.strftime('%Y%m%d', time.gmtime())
-  strFile = 'nws_precip_2009011216.tar.gz'
-  
-  baseURL = baseURL + strY + '/' + strYM + '/' + strYMD + '/'
-  #baseURL, destDir, fileMode, useFetchLog, fetchLogDir, log ):
-  remoteFileDL = remoteFileDownload( baseURL, destDir, '', 1, strFetchDir, logMsgs)
- 
-  fileList = ['']
-  fileList = remoteFileDL.checkForNewFiles('')
-  for fileName in fileList :    
-    if( re.match( 'nws_precip_', fileName ) != None ):
-      remoteFileDL.getFile( fileName, '', 1 )
+
+class processNOAAPrecipData:
+  def __init__(self, xmlConfigFile):
+    from lxml import etree
+    try:
+      xmlTree = etree.parse(xmlConfigFile)
+      baseURL = xmlTree.xpath( '//data/baseURL' )[0].text
+      self.fileNameFilter = xmlTree.xpath( '//data/fileNameFilter' )[0].text 
+      remoteDir = xmlTree.xpath( '//data/remoteDir' )[0].text
+      #If we need to refine the directory further based on date/time then let's do the substitutions.
+      #For the shapefiles, the directory structure is: /YYYY/YYYYMM/YYYYMMDD/
+      #The format for the filename is nws_precip_YYYYMMDDHH.tar.gz where HH is the hour, GMT time.   
+      #The XMRG directory has no such refinement, so we would not have this item configured in the config file.   
+      if( len( remoteDir ) ):
+          baseURL = baseURL + time.strftime(remoteDir, time.gmtime())
+
+      dlDir   = xmlTree.xpath( '//data/downloadDir' )[0].text
+      logMsgs = xmlTree.xpath( '//logging/logMsgs' )[0].text
+      useFetchLog = int( xmlTree.xpath( '//fetchLogging/use' )[0].text )
+      checkModDate = 0
+      fetchLogDir = ''
+      if( useFetchLog ):       
+        checkModDate = int( xmlTree.xpath( '//fetchLogging/checkModDate' )[0].text )
+        fetchLogDir  = xmlTree.xpath( '//fetchLogging/logDir' )[0].text
+      
+      self.remoteFileDL = remoteFileDownload( baseURL, dlDir, 'b', useFetchLog, fetchLogDir, logMsgs)
+
+    except Exception, e:
+      print "processNOAAPrecipData::init:Error:",str(e)
+      exit(-1)
+
+  def processFiles(self):
+    filesProcd = 0
+    fileList = []
+    #See if there are any new files to try and download.
+    fileList = self.remoteFileDL.checkForNewFiles('')
+    filesDLd = []
+    #Loop through our list of files, filter out the ones based on the approximate name we should have, then download them.
+    for fileName in fileList :    
+      if( re.match( self.fileNameFilter, fileName ) != None ):
+        fileDLd = self.remoteFileDL.getFile( fileName, '', 1 )
+        #If we pulled a file down, store it in the list for processing.
+        if( len(fileDLd ) ):
+          filesDLd.append( fileDLd ) 
+        
+        
+
+if __name__ == '__main__':  
+  procPrecip = processNOAAPrecipData(sys.argv[1])
+  procPrecip.processFiles()
