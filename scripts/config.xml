@@ -1,0 +1,16 @@
+<environment>
+  <data>
+    <baseURL>http://www.srh.noaa.gov/rfcshare/p_download_hourly/</baseURL>
+    <remoteDir>%Y/%Y%m/%Y%m%d/</remoteDir>
+    <fileNameFilter>nws_precip</fileNameFilter>
+    <downloadDir>c:\temp\nws_precip\shapefiles\</downloadDir>
+  </data>
+  <fetchLogging>
+    <use>1</use>
+    <checkModDate>0</checkModDate>
+    <logDir>c:\temp\nws_precip\fetchlog\</logDir>
+  </fetchLogging>
+  <logging>    
+    <logMsgs>1</logMsgs>    
+  </logging>
+</environment>
