@@ -1,5 +1,7 @@
 #Information dealing with the where/how of automating retrieval of the hourly precip files.
 
+This [http://www.weather.gov/oh/hrl/dmip/2/xmrgformat.html page] details out the ins and outs of the XMRG and HRAP data. 
+
 =Hourly quality-controlled, multi-sensor (radar and rain gauge) precipitation estimates=
   * Shapefiles URL
   [http://www.srh.noaa.gov/rfcshare/p_download_hourly/]
