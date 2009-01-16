@@ -20,3 +20,4 @@ This [http://www.weather.gov/oh/hrl/dmip/2/xmrgformat.html page] details out the
 
   * XMRG URL
   [http://www.srh.noaa.gov/anonymous/serfc/anon/xmrg/]
+  This data is the HRAP grid. The rainfall data is stored in hundredths of mm.
