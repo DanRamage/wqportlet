@@ -13,6 +13,10 @@ This [http://www.weather.gov/oh/hrl/dmip/2/xmrgformat.html page] details out the
 
   For the hours 00 is used instead of 24.
   Only the last 14days are stored online.
+  
+  When working with the latest hourly file, if the hour is 11, the date represents the data
+  collected from 10 to 11.
+
 
   * XMRG URL
   [http://www.srh.noaa.gov/anonymous/serfc/anon/xmrg/]
