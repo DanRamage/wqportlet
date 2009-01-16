@@ -1,7 +1,7 @@
 #Information dealing with the where/how of automating retrieval of the hourly precip files.
 
 =Hourly quality-controlled, multi-sensor (radar and rain gauge) precipitation estimates=
-  * URL
+  * Shapefiles URL
   [http://www.srh.noaa.gov/rfcshare/p_download_hourly/]
 
 
@@ -11,3 +11,6 @@
 
   For the hours 00 is used instead of 24.
   Only the last 14days are stored online.
+
+  * XMRG URL
+  [http://www.srh.noaa.gov/anonymous/serfc/anon/xmrg/]
