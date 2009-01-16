@@ -1,0 +1,68 @@
+c**********************************************************************
+      subroutine latlon_to_hrap(rlon,rlat,hrap_x,hrap_y)
+c**********************************************************************
+c
+c subroutine converts lat-lon to HRAP
+c
+c input variables
+c
+c rlon   - longitude in fractional degrees
+c rlat   - lattitude in fractional degrees
+c
+c output variables
+c
+c hrap_x - global HRAP x-coordinate
+c hrap_y - global HRAP y-coordinate
+c
+      pi=3.141592654
+      d2rad=pi/180.
+      earthr=6371.2
+      ref_lat=60.
+      ref_lon=105.
+      rmesh=4.7625
+      tlat=ref_lat*d2rad
+      re=(earthr*(1.+sin(tlat)))/rmesh
+      flat=rlat*d2rad
+      flon=(rlon+180.-ref_lon)*d2rad
+      r=re*cos(flat)/(1.+sin(flat))
+      x=r*sin(flon)
+      y=r*cos(flon)
+      hrap_x=x+401.
+      hrap_y=y+1601.
+      return
+      end
+c**********************************************************************
+      subroutine hrap_to_latlon(hrap_x,hrap_y,rlon,rlat)
+c**********************************************************************
+c
+c subroutine converts HRAP to lat-lon
+c
+c input variables
+c
+c hrap_x - global HRAP x-coordinate
+c hrap_y - global HRAP y-coordinate
+c
+c output variables
+c
+c rlon   - longitude in fractional degrees
+c rlat   - lattitude in fractional degrees
+c
+      earthr=6371.2
+      stlon=105.
+      pi=3.141592654
+      raddeg=180./pi
+      xmesh=4.7625
+      tlat=60./raddeg
+      x=hrap_x-401.
+      y=hrap_y-1601.
+      rr=x*x+y*y
+      gi=((earthr*(1.+sin(tlat)))/xmesh)
+      gi=gi*gi
+      rlat=asin((gi-rr)/(gi+rr))*raddeg
+      ang=atan2(y,x)*raddeg
+      if(ang.lt.0.) ang=ang+360.
+      rlon=270.+stlon-ang
+      if(rlon.lt.0.) rlon=rlon+360.
+      if(rlon.gt.360.) rlon=rlon-360.
+      return
+      end
