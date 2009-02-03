@@ -1,8 +1,34 @@
 import os
 import array
 import struct
+import csv
+import time
+from lxml import etree
 
+try:
+  from osgeo import gdal
+  from osgeo.gdalconst import *
+  gdal.TermProgress = gdal.TermProgress_nocb
+except ImportError:
+  import gdal
+  from gdalconst import *  
+try:
+  import numpy as Numeric
+  Numeric.arrayrange = Numeric.arange
+except ImportError:
+  import Numeric
+
+"""
+  Class: xmrgFile
+  Purpose: This class processes a NOAA XMRG binary file.
+"""
 class xmrgFile:
+  """
+    Function: init
+    Purpose: Initalizes the class.
+    Parameters: None
+    Return: None
+  """
   def __init__(self):
     self.fileName = ''
     self.lastErrorMsg = ''
@@ -21,7 +47,6 @@ class xmrgFile:
     return(retVal)
     
   def readFileHeader( self ):
-    retVal = False
     try:
       #Determine if byte swapping is needed.
       #From the XMRG doc:
@@ -64,6 +89,8 @@ class xmrgFile:
       hasDataNfoHeader = True
       if( self.swapBytes ):
         unpackFmt += '>'
+        
+      #Header for files written 1999 to present.
       if( byteCnt == 66 ):
         #The info header has the following layout
         #Operating system: char[2]
@@ -79,19 +106,22 @@ class xmrgFile:
         buf = self.xmrgFile.read(66)
         self.fileNfoHdrData = struct.unpack(unpackFmt, buf)
         self.srcFileOpen = 1
-        
+      #Files written June 1997 to 1999  
       elif( byteCnt == 38 ):
         unpackFmt += '=10s10s10s8s'
         buf = self.xmrgFile.read(38)
         self.fileNfoHdrData = struct.unpack(unpackFmt, buf)
         self.srcFileOpen = 1
         
+      #Files written June 1997 to 1999. I assume there was some bug for this since the source
+      #code also was writing out an error message.  
       elif( byteCnt == 37 ):
         unpackFmt += '=10s10s10s8s'
         buf = self.xmrgFile.read(37)
         self.fileNfoHdrData = struct.unpack(unpackFmt, buf)
         self.srcFileOpen = 1
         
+      #Files written up to June 1997, no 2nd header.  
       elif( byteCnt == ( self.MAXX * 2 ) ):
         print( "Reading pre-1997 format" )        
         self.srcFileOpen = 1
@@ -103,24 +133,26 @@ class xmrgFile:
       #Invalid byte count.
       else:
         self.lastErrorMsg = 'Header is unknown format, cannot continue.'
+        return( False )
       
-      #Read the tail int, should be equal to byteCnt
+      #If the file we are reading was not a pre June 1997, we read the tail int, 
+      #should be equal to byteCnt
       if( hasDataNfoHeader ): 
         header = array.array('I')
         header.fromfile( self.xmrgFile, 1 )
         if( self.swapBytes ):
-          header.byteswap()
+          header.byteswap()        
         if( header[0] != byteCnt ):
-          print( 'ERROR: tail byte cnt does not equal head.')
-      
+          self.lastErrorMsg = 'ERROR: tail byte cnt does not equal head.'
+          return( False )
+          
       if( self.srcFileOpen ):
-        retVal = True
+        return( True )
 
     except Exception, E:
       self.lastErrorMsg = str(E)
-      print( 'ERROR: ' + str(E)) 
     
-    return( retVal )      
+    return( False )      
   
   def writeASCIIGrid(self, format, outputFile, northmostrowfirst=True, units='inches'):
     if( self.readFileHeader() ):
@@ -158,7 +190,7 @@ class xmrgFile:
         gridFile.write( 'yllcorner %d\n' % yllCorner )
         gridFile.write( 'cellsize %f\n' % cellsize )
         if( nodata != -1 ):
-          gridFile.write( 'nodata_value %d' % xllCorner )
+          gridFile.write( 'nodata_value %d\n' % nodata )
         ####################################################################
         #Write data
         #Used if we want to make the northmost row the first in the grid file. We have to invert
@@ -200,7 +232,8 @@ class xmrgFile:
               rowList[row][col] = val
             col+=1
           #Add the return at the end of the row.
-          gridFile.write( "\n" )
+          if( northmostrowfirst == False ):
+            gridFile.write( "\n" )
           
           #Now read trailing tag
           dataArray= array.array('I')
@@ -211,7 +244,6 @@ class xmrgFile:
           #We do MAXX * 2 since each value is a short.
           if( dataArray[0] != (self.MAXX*2) ):
             self.lastErrorMsg = 'Trailing tag Byte count: %d for row: %d does not match header: %d.' %( dataArray[0], row, self.MAXX )
-            print( 'ERROR: ' + self.lastErrorMsg )
             return( False )
       
         if( northmostrowfirst ):
@@ -223,20 +255,198 @@ class xmrgFile:
               #If we are writing the file so the southmost row is first, go head and write the row
               #to the file. Otherwise to have northmost first, we have to invert the rows.
               gridFile.write( '%f ' % val )
+            gridFile.write( "\n" )
           
         print( 'Processed %d rows.' % ( row + 1 ) )
         gridFile.flush()
         gridFile.close()            
+        
+        return( True )
       except Exception, E:
         self.lastErrorMsg = str(E) 
-        print( 'ERROR: ' + str(E)) 
+
+    return( False )
+
+"""
+  Class: rainGaugeData
+  Purpose: Simple class that represents a processed row from a dhec rain gauge file.
+"""
+class rainGaugeData:
+  def __init__(self):
+    self.ID = -1
+    self.dateTime = -1
+    self.batteryVoltage = -1
+    self.programCode = -1
+    self.rainfall = -1
+    self.windSpeed = -1
+    self.windDir  = -1
+"""
+  Class: readRainGaugeData
+  Purpose: Given a dhec rain gauge csv file, this class will process the file line by line.
+"""
+class readRainGaugeData:
     
-        
+  """
+    Function: init
+    Purpose: Initializes the class.
+    Parameters: None
+    Return: None
+  """
+  def __init__(self):
+    self.lastErrorMsg = ''
+  
+  """
+  Function: openFile
+  Purpose: Opens the dhec csv file using a Python csv object.
+  Parameters:
+    filePath is the fully qualified path to the file we want to process
+  Return: True if the file was successfully opened, otherwise false. If an exception is thrown,
+    an error message will be in self.lastErrorMsg
+  """
+  def openFile(self, filePath):
+    self.filePath = filePath
+    try:
+      #Open the file for reading in ascii mode.
+      self.file = csv.reader(open( self.filePath, "rb" ))      
+    except csv.Error, e:
+      self.lastErrorMsg = ('file %s, line %d: %s' % (filename, reader.line_num, e))
+      return(False)
+    return(True) 
+  
+  """
+  Function: processLine
+  Purpose: Reads and decodes a single row from the opened csv file. Returns a rainGaugeData class
+    that contains the processed data. When the EOF is hit, a StopIteration exception is thrown. 
+  Parameters: None
+  Return: A rainGaugeData class. If an error occurs, this data will be set to None.
+  """  
+  def processLine(self):
+    dataRow = rainGaugeData() 
+    try:
+      row = self.file.next()
+      #1st entry is rain gauge ID
+      dataRow.ID = row[0]
+      #Array entries 1-3 are: Year, Julien day, time in military minutes. We convert these
+      #into a datetime format. There are 2400 time entries, one of them is the days summary, the other
+      #is another 10minute interval.      
+      hour = int(row[3]) / 100    #Get the hours
+      minute = int(row[3]) - (hour * 100) # Get the minutes
+      #There are entries for the 2400 hour that are for the previous day, not the day that would start
+      #at 0000. These rows are a 24 hour rainfall summary and one row is the final 10 minute sample for the day.
+      if( hour == 24 ):
+        hour = 23
+        minute = 59
+      datetime = "%d-%d %d:%d" % (int(row[1]),int(row[2]),hour,minute)
+      datetime = time.strptime( datetime, '%Y-%j %H:%M')
+      datetime = time.strftime( '%Y-%m-%dT%H:%M:00', datetime )
+      
+      dataRow.ID = row[0]
+      dataRow.dateTime = datetime
+      dataRow.batteryVoltage = row[4]
+      dataRow.programCode = row[5]
+      dataRow.rainfall = float(row[6])
+      print( 'Processing line: %d %s' % ( self.file.line_num, row ) )
+      return(dataRow)
+      #No more rows to iterate.
+   
+    except csv.Error, e:
+      self.lastErrorMsg = ('File %s. Line %d: %s' % (self.filePath, self.file.line_num, e))
+            
+    return(dataRow)
+
+"""
+Class: processDHECRainGauges
+Purpose: Given a list of dhec rain gauge files, this class will process them all and store the results into
+  the database connected to the dbConnection parameter passed in the __init__ function.
+"""
+class processDHECRainGauges:
+  """
+  Function: __init__
+  Purpose: Initializes the class. 
+  Parameters:
+    workingFileDir is a path to the directory where the dhec csv files live.
+    dbConnection is a connected connection to the database we are going to store the data in.
+  """
+  def __init__(self, xmlConfigFile):
+    try:
+      xmlTree = etree.parse(xmlConfigFile)
+      dbPath = xmlTree.xpath( '//database/db/name' )[0].text 
+      #self.dbCon = dbConnection
+      #Get a file list for the directory.
+      self.fileDirectory = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )[0].text 
+      self.fileList = os.listdir( self.fileDirectory )
+
+      self.rainGaugeInfo = {}
+      rainGauge = xmlTree.xpath( '//environment/rainGaugeProcessing/rainGaugeList')
+      for child in rainGauge[0].getchildren():
+        name = child.xpath( 'name' )[0].text 
+        id = child.xpath( 'fileID' )[0].text 
+        summaryid = child.xpath( 'file24hrSumId' )[0].text
+        self.rainGaugeInfo[name] = [('id', id),('summaryid', summaryid)] 
+      
+    except OSError, e:
+      print( str(e) )
+    except Exception, e:
+      print( str(e) )
+  """
+  Function: setFileList
+  Purpose: Allows us to override the fileList of csv files to process. 
+  Parameters:
+    fileList is a list of csv files to process.
+  """
+  def setFileList(self, fileList ):
+    self.fileList = fileList  
+    
+  """
+  Function: processFiles
+  Purpose: Loops through the fileList and processes the dhec data files. The data is then stored
+    into the database.
+  Parameters:None
+  Return:    
+  """
+  def processFiles(self):    
+    for file in self.fileList:
+      try:     
+        fullPath = self.fileDirectory + '\\' + file
+        print( "Begin processing file: %s" % fullPath )
+        rainGaugeFile = readRainGaugeData()
+        rainGaugeFile.openFile( fullPath )
+        dataRow = rainGaugeFile.processLine()
+        #Get the row id and the summary id.
+        rainGaugeId = file.split('.')
+        id = self.rainGaugeInfo[rainGaugeId[0]]    
+        while( dataRow != None ):
+          if( dataRow != None ):
+            i = 0
+          else:
+            break                       
+          dataRow = rainGaugeFile.processLine()    
+      except StopIteration,e:
+        print( 'EOF file: %s' % file )
+
 if __name__ == '__main__':
+  
+  dhecData = processDHECRainGauges("C:\\Documents and Settings\\dramage\workspace\\SVNSandbox\\wqportlet\\trunk\\scripts\\config.xml")
+  dhecData.processFiles()
   
   xmrg = xmrgFile()
   #inputFile = "C:\\Temp\\xmrg0506199516z\\xmrg0506199516z"
   inputFile = "C:\\Temp\\xmrg0129200918z\\xmrg0129200918z"
   xmrg.openFile( inputFile, 0 )
-  xmrg.writeASCIIGrid( 'hrap', 'C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc')
+  xmrg.writeASCIIGrid( 'polarstereo', 'C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc')
   #xmrg.writeASCIIGrid( 'hrap', 'C:\\Temp\\xmrg0506199516z\\xmrg0506199516z.asc')
+  
+  try:
+    srcGridFile = gdal.Open('C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc', GA_ReadOnly)
+    geotransform = srcGridFile.GetGeoTransform()
+    band = srcGridFile.GetRasterBand(1)
+    print 'Size is ',srcGridFile.RasterXSize,'x',srcGridFile.RasterYSize,'x',srcGridFile.RasterCount
+    print 'Projection is ',srcGridFile.GetProjection()
+    print 'Origin = (',geotransform[0], ',',geotransform[3],')'
+    print 'Pixel Size = (',geotransform[1], ',',geotransform[5],')'
+    print 'Converting band number',1,'with type',gdal.GetDataTypeName(band.DataType)    
+       
+  except Exception, E:
+    print( 'ERROR: ' + str(E) ) 
+  
+  
