@@ -13,4 +13,87 @@
   <logging>    
     <logMsgs>1</logMsgs>    
   </logging>
+  <database>
+    <db>
+      <type>sqlite</type>
+      <name>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec.db</name>
+    </db>
+  </database>
+  <rainGaugeProcessing>
+    <rainGaugeFileDir>\\129.252.139.120\dehec</rainGaugeFileDir>
+    
+    <rainGaugeList>      
+      <rainGauge>
+        <name>nmb1</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>101</fileID>
+        <file24hrSumId>102</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>nmb2</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>111</fileID>
+        <file24hrSumId>112</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>nmb3</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>121</fileID>
+        <file24hrSumId>122</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>mb1</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>131</fileID>
+        <file24hrSumId>132</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>mb2</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID></fileID>
+        <file24hrSumId></file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>mb3</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>151</fileID>
+        <file24hrSumId>152</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>mb4</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>161</fileID>
+        <file24hrSumId>162</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>surfside</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>171</fileID>
+        <file24hrSumId>172</file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>gardencity</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID></fileID>
+        <file24hrSumId></file24hrSumId>
+      </rainGauge>
+      <rainGauge>
+        <name>murrellsinlet</name>
+        <type></type>
+        <phoneNumber></phoneNumber>
+        <fileID>191</fileID>
+        <file24hrSumId>192</file24hrSumId>
+      </rainGauge>      
+    </rainGaugeList>
+    
+  </rainGaugeProcessing>
 </environment>
