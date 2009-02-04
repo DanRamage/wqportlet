@@ -1,8 +1,11 @@
 import os
+import sys
 import array
 import struct
 import csv
 import time
+import logging
+from collections import defaultdict  
 from lxml import etree
 
 try:
@@ -294,6 +297,10 @@ class readRainGaugeData:
   """
   def __init__(self):
     self.lastErrorMsg = ''
+    #Create and hook into the logger.
+    self.logger = logging.getLogger("dhec_logger.readRainGaugeData")
+    self.logger.info("creating an instance of readRainGaugeData")
+    
   
   """
   Function: openFile
@@ -309,7 +316,8 @@ class readRainGaugeData:
       #Open the file for reading in ascii mode.
       self.file = csv.reader(open( self.filePath, "rb" ))      
     except csv.Error, e:
-      self.lastErrorMsg = ('file %s, line %d: %s' % (filename, reader.line_num, e))
+      self.lastErrorMsg = ('file %s, line %d: %s' % (filename, self.file.line_num, e))
+      self.logger.error( self.lastErrorMsg )
       return(False)
     return(True) 
   
@@ -324,35 +332,98 @@ class readRainGaugeData:
     dataRow = rainGaugeData() 
     try:
       row = self.file.next()
+      if( len(row) == 0 ):
+        self.logger.debug( 'Empty row on line: %d moving to next row' % ( self.file.line_num ) )
+        return( dataRow )
+      elif( len(row) < 6 ):
+        self.logger.debug( "Row: '%s' is missing data on line: %d moving to next row" % ( row, self.file.line_num ) )
+        return( dataRow )
       #1st entry is rain gauge ID
-      dataRow.ID = row[0]
+      if( len(row[0])):
+          dataRow.ID = int(row[0])
+      else:
+        dataRow.ID = 0
+        self.logger.error( "ID field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
       #Array entries 1-3 are: Year, Julien day, time in military minutes. We convert these
       #into a datetime format. There are 2400 time entries, one of them is the days summary, the other
-      #is another 10minute interval.      
-      hour = int(row[3]) / 100    #Get the hours
-      minute = int(row[3]) - (hour * 100) # Get the minutes
-      #There are entries for the 2400 hour that are for the previous day, not the day that would start
-      #at 0000. These rows are a 24 hour rainfall summary and one row is the final 10 minute sample for the day.
-      if( hour == 24 ):
-        hour = 23
-        minute = 59
-      datetime = "%d-%d %d:%d" % (int(row[1]),int(row[2]),hour,minute)
-      datetime = time.strptime( datetime, '%Y-%j %H:%M')
-      datetime = time.strftime( '%Y-%m-%dT%H:%M:00', datetime )
-      
-      dataRow.ID = row[0]
-      dataRow.dateTime = datetime
-      dataRow.batteryVoltage = row[4]
-      dataRow.programCode = row[5]
-      dataRow.rainfall = float(row[6])
-      print( 'Processing line: %d %s' % ( self.file.line_num, row ) )
+      #is another 10minute interval.   
+      if( len(row[1]) and len(row[2]) and len(row[3]) ):   
+        hour = int(row[3]) / 100    #Get the hours
+        minute = int(row[3]) - (hour * 100) # Get the minutes
+        #There are entries for the 2400 hour that are for the previous day, not the day that would start
+        #at 0000. These rows are a 24 hour rainfall summary and one row is the final 10 minute sample for the day.
+        if( hour == 24 ):
+          hour = 23
+          minute = 59
+        datetime = "%d-%d %d:%d" % (int(row[1]),int(row[2]),hour,minute)
+        datetime = time.strptime( datetime, '%Y-%j %H:%M')
+        datetime = time.strftime( '%Y-%m-%dT%H:%M:00', datetime )      
+        dataRow.dateTime = datetime
+      else:
+        self.logger.debug( "Missing a date field on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+        
+      if( len(row[4])):
+          dataRow.batteryVoltage = float(row[4])
+      else:
+        self.logger.debug( "Battery voltage field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+
+      if( len(row[5])):
+        dataRow.programCode = int(row[5])
+      else:
+        self.logger.debug( "Program Code field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+      if( len(row[6])):
+        dataRow.rainfall = float(row[6])
+      else:
+        self.logger.error( "Rainfall field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+      #print( 'Processing line: %d %s' % ( self.file.line_num, row ) )
       return(dataRow)
       #No more rows to iterate.
    
     except csv.Error, e:
       self.lastErrorMsg = ('File %s. Line %d: %s' % (self.filePath, self.file.line_num, e))
+      self.logger.error( self.lastErrorMsg )
             
     return(dataRow)
+"""
+Class: dhecDB
+Purpose: Interface to the dhec beach advisory prediction database.
+"""
+from pysqlite2 import dbapi2 as sqlite3
+class dhecDB:
+  """
+  Function: __init__
+  Purpose: Initializes the database object. Connects to the database passed in on the dbName parameter.
+  """
+  def __init__(self, dbName):
+    self.dbCon = sqlite3.connect( dbName )
+    self.logger = logging.getLogger("dhec_logger.dhecDB")
+    self.logger.info("creating an instance of dhecDB")
+
+  def writePrecip( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
+    sql = "INSERT INTO precipitation  \
+          (datetime,rain_gauge,batt_voltage,program_code,rainfall ) \
+          VALUES( '%s','%s',%3.2f,%d,%2.4f );" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      return(True)
+    
+    except sqlite3.Error, e:
+      self.logger.error( e.args[0] + 'SQL: ' + sql )
+    except Exception, e:
+      self.logger.error( str(e)  + 'SQL: ' + sql )
+      
+    return(False)         
+
+  def write24HourSummary( self, datetime,rain_gauge,rainfall ):
+    sql = "INSERT INTO precip_daily_summary  \
+          (datetime,rain_gauge,rainfall ) \
+          VALUES( '%s','%s',%2.4f );" % (datetime,rain_gauge,rainfall)
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+    except sqlite3.Error, e:
+      self.logger.error( e.args[0] + 'SQL: ' + sql )
 
 """
 Class: processDHECRainGauges
@@ -370,24 +441,46 @@ class processDHECRainGauges:
   def __init__(self, xmlConfigFile):
     try:
       xmlTree = etree.parse(xmlConfigFile)
-      dbPath = xmlTree.xpath( '//database/db/name' )[0].text 
-      #self.dbCon = dbConnection
+
+      #Create our logging object.
+      logFile = xmlTree.xpath( '//logging/logDir' )[0].text
+      self.logger = logging.getLogger("dhec_logger")
+      self.logger.setLevel(logging.DEBUG)
+      # create file handler which logs even debug messages
+      logFh = logging.FileHandler(logFile)
+      logFh.setLevel(logging.DEBUG)
+      # create formatter and add it to the handlers
+      formatter = logging.Formatter("%(asctime)s,%(name)s,%(levelname)s,%(message)s")
+      logFh.setFormatter(formatter)
+      # add the handlers to the logger
+      self.logger.addHandler(logFh)
+      self.logger.info('Log file opened')
+
+      dbPath = xmlTree.xpath( '//database/db/name' )[0].text
+      self.db = dhecDB(dbPath) 
       #Get a file list for the directory.
       self.fileDirectory = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )[0].text 
       self.fileList = os.listdir( self.fileDirectory )
-
-      self.rainGaugeInfo = {}
-      rainGauge = xmlTree.xpath( '//environment/rainGaugeProcessing/rainGaugeList')
-      for child in rainGauge[0].getchildren():
-        name = child.xpath( 'name' )[0].text 
-        id = child.xpath( 'fileID' )[0].text 
-        summaryid = child.xpath( 'file24hrSumId' )[0].text
-        self.rainGaugeInfo[name] = [('id', id),('summaryid', summaryid)] 
+      
+      
+      #The data files have an ID as the first column with the format of xx1 or xx2. xx1 is the 10 minute
+      #data where the xx2 is the 
+      #self.rainGaugeInfo = defaultdict(dict)
+      #rainGauge = xmlTree.xpath( '//environment/rainGaugeProcessing/rainGaugeList')
+      #for child in rainGauge[0].getchildren():
+      #  name = child.xpath( 'name' )[0].text 
+      #  updateID = int(child.xpath( 'fileID' )[0].text) 
+      #  summaryID = int(child.xpath( 'file24hrSumId' )[0].text)
+      #  self.rainGaugeInfo[name]['updateid'] = updateID
+      #  self.rainGaugeInfo[name]['summaryid'] = summaryID
       
     except OSError, e:
-      print( str(e) )
+      print( 'ERROR: ' + str(e) )
     except Exception, e:
-      print( str(e) )
+      print( 'ERROR: ' + str(e) )
+    except sqlite3.Error, e:
+      print( 'ERROR: ' + e.args[0] )
+      
   """
   Function: setFileList
   Purpose: Allows us to override the fileList of csv files to process. 
@@ -405,48 +498,79 @@ class processDHECRainGauges:
   Return:    
   """
   def processFiles(self):    
+    fileProcdCnt = 0
     for file in self.fileList:
+      if( file == 'nmb1.csv' ):
+        i = 0
       try:     
         fullPath = self.fileDirectory + '\\' + file
-        print( "Begin processing file: %s" % fullPath )
+        self.logger.info( "Begin processing file: %s" % fullPath )
         rainGaugeFile = readRainGaugeData()
         rainGaugeFile.openFile( fullPath )
         dataRow = rainGaugeFile.processLine()
         #Get the row id and the summary id.
         rainGaugeId = file.split('.')
-        id = self.rainGaugeInfo[rainGaugeId[0]]    
+        #id = self.rainGaugeInfo[rainGaugeId[0]]  
+        #updateID = id['updateid']
+        #summaryID = id['summaryid']
         while( dataRow != None ):
-          if( dataRow != None ):
-            i = 0
+          if( dataRow.ID > 0 ):
+            updateType = dataRow.ID & 1
+            if( updateType == 1):
+              if( self.db.writePrecip( dataRow.dateTime, rainGaugeId[0], dataRow.batteryVoltage, dataRow.programCode, dataRow.rainfall ) == False ):
+                self.logger.error( 'Failed to write the precipitation data into the database. Terminating execution.' )
+                sys.exit(-1)
+            elif( updateType == 0 ):
+              if( self.db.write24HourSummary( dataRow.dateTime, rainGaugeId[0], dataRow.rainfall ) == False ):
+                self.logger.error( 'Failed to write the summary precipitation data into the database. Terminating execution.' )
+                sys.exit(-1)
+            else:
+                self.logger.error( 'File Line: %d ID: %d is not valid' % ( rainGaugeFile.file.line_num, dataRow.ID ) )                           
           else:
-            break                       
-          dataRow = rainGaugeFile.processLine()    
-      except StopIteration,e:
-        print( 'EOF file: %s' % file )
+            self.logger.error( 'No record processed from line: %d' % rainGaugeFile.file.line_num )
+                                    
 
+          dataRow = rainGaugeFile.processLine()
+       
+      except StopIteration,e:
+        self.logger.info( 'EOF file: %s. Processed: %d lines' % ( file, rainGaugeFile.file.line_num ) )
+      except Exception,e:
+        self.logger.error(str(e) + ' Terminating execution')
+        sys.exit(-1)
+        
+      fileProcdCnt += 1
+      try:
+        #Commit all the entries into the database for this file.
+        self.logger.info( 'Committing SQL inserts' )
+        self.db.dbCon.commit()
+      except sqlite3.Error, e:
+        self.logger.error(e.args[0] + ' Terminating execution')
+        sys.exit(-1)
+        
+    self.logger.info( "Finished processing file list. Processed: %d of %d files" % (fileProcdCnt,len( self.fileList )) )
 if __name__ == '__main__':
   
   dhecData = processDHECRainGauges("C:\\Documents and Settings\\dramage\workspace\\SVNSandbox\\wqportlet\\trunk\\scripts\\config.xml")
   dhecData.processFiles()
   
-  xmrg = xmrgFile()
+#  xmrg = xmrgFile()
   #inputFile = "C:\\Temp\\xmrg0506199516z\\xmrg0506199516z"
-  inputFile = "C:\\Temp\\xmrg0129200918z\\xmrg0129200918z"
-  xmrg.openFile( inputFile, 0 )
-  xmrg.writeASCIIGrid( 'polarstereo', 'C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc')
+#  inputFile = "C:\\Temp\\xmrg0129200918z\\xmrg0129200918z"
+#  xmrg.openFile( inputFile, 0 )
+#  xmrg.writeASCIIGrid( 'polarstereo', 'C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc')
   #xmrg.writeASCIIGrid( 'hrap', 'C:\\Temp\\xmrg0506199516z\\xmrg0506199516z.asc')
   
-  try:
-    srcGridFile = gdal.Open('C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc', GA_ReadOnly)
-    geotransform = srcGridFile.GetGeoTransform()
-    band = srcGridFile.GetRasterBand(1)
-    print 'Size is ',srcGridFile.RasterXSize,'x',srcGridFile.RasterYSize,'x',srcGridFile.RasterCount
-    print 'Projection is ',srcGridFile.GetProjection()
-    print 'Origin = (',geotransform[0], ',',geotransform[3],')'
-    print 'Pixel Size = (',geotransform[1], ',',geotransform[5],')'
-    print 'Converting band number',1,'with type',gdal.GetDataTypeName(band.DataType)    
+#  try:
+#    srcGridFile = gdal.Open('C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc', GA_ReadOnly)
+#    geotransform = srcGridFile.GetGeoTransform()
+#    band = srcGridFile.GetRasterBand(1)
+#    print 'Size is ',srcGridFile.RasterXSize,'x',srcGridFile.RasterYSize,'x',srcGridFile.RasterCount
+#    print 'Projection is ',srcGridFile.GetProjection()
+#    print 'Origin = (',geotransform[0], ',',geotransform[3],')'
+#    print 'Pixel Size = (',geotransform[1], ',',geotransform[5],')'
+#    print 'Converting band number',1,'with type',gdal.GetDataTypeName(band.DataType)    
        
-  except Exception, E:
-    print( 'ERROR: ' + str(E) ) 
+#  except Exception, E:
+#    print( 'ERROR: ' + str(E) ) 
   
   
