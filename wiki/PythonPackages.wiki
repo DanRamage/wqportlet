@@ -13,3 +13,4 @@ Python version required: 2.5
     another ldd _gdal.so showed the library could then be found. I am unsure of where
     it was looking initally.
   # [http://www.scipy.org/Download numpy]
+  # [http://oss.itsystementwicklung.de/trac/pysqlite/wiki/PysqlitePackages pysqlite]
