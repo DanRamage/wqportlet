@@ -368,7 +368,7 @@ class readRainGaugeData:
         self.logger.debug( "Battery voltage field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
 
       if( len(row[5])):
-        dataRow.programCode = int(row[5])
+        dataRow.programCode = float(row[5])
       else:
         self.logger.debug( "Program Code field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
       if( len(row[6])):
@@ -395,14 +395,21 @@ class dhecDB:
   Purpose: Initializes the database object. Connects to the database passed in on the dbName parameter.
   """
   def __init__(self, dbName):
-    self.dbCon = sqlite3.connect( dbName )
     self.logger = logging.getLogger("dhec_logger.dhecDB")
     self.logger.info("creating an instance of dhecDB")
+    try:
+      self.dbCon = sqlite3.connect( dbName )
+    except sqlite3.Error, e:
+      self.logger.error( e.args[0] + ' Terminating script.' )
+      sys.exit(-1)
+    except Exception, e:
+      self.logger.error( str(e) + ' Terminating script.' )
+      sys.exit(-1)
 
   def writePrecip( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
     sql = "INSERT INTO precipitation  \
-          (datetime,rain_gauge,batt_voltage,program_code,rainfall ) \
-          VALUES( '%s','%s',%3.2f,%d,%2.4f );" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
+          (date,rain_gauge,batt_voltage,program_code,rainfall ) \
+          VALUES( '%s','%s',%3.2f,%.2f,%2.4f );" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
@@ -410,14 +417,12 @@ class dhecDB:
     
     except sqlite3.Error, e:
       self.logger.error( e.args[0] + 'SQL: ' + sql )
-    except Exception, e:
-      self.logger.error( str(e)  + 'SQL: ' + sql )
       
     return(False)         
 
   def write24HourSummary( self, datetime,rain_gauge,rainfall ):
     sql = "INSERT INTO precip_daily_summary  \
-          (datetime,rain_gauge,rainfall ) \
+          (date,rain_gauge,rainfall ) \
           VALUES( '%s','%s',%2.4f );" % (datetime,rain_gauge,rainfall)
     try:
       dbCursor = self.dbCon.cursor()
@@ -457,9 +462,11 @@ class processDHECRainGauges:
       self.logger.info('Log file opened')
 
       dbPath = xmlTree.xpath( '//database/db/name' )[0].text
+      self.logger.debug( 'Database path: %s' % dbPath )
       self.db = dhecDB(dbPath) 
       #Get a file list for the directory.
       self.fileDirectory = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )[0].text 
+      self.logger.debug( 'Directory for rain gauge data: %s' % self.fileDirectory )
       self.fileList = os.listdir( self.fileDirectory )
       
       
@@ -475,11 +482,9 @@ class processDHECRainGauges:
       #  self.rainGaugeInfo[name]['summaryid'] = summaryID
       
     except OSError, e:
-      print( 'ERROR: ' + str(e) )
+      print( 'ERROR: ' + str(e) + ' Terminating script' )      
     except Exception, e:
-      print( 'ERROR: ' + str(e) )
-    except sqlite3.Error, e:
-      print( 'ERROR: ' + e.args[0] )
+      print( 'ERROR: ' + str(e)  + ' Terminating script')
       
   """
   Function: setFileList
@@ -497,60 +502,71 @@ class processDHECRainGauges:
   Parameters:None
   Return:    
   """
-  def processFiles(self):    
+  def processFiles(self):        
     fileProcdCnt = 0
-    for file in self.fileList:
-      if( file == 'nmb1.csv' ):
-        i = 0
-      try:     
-        fullPath = self.fileDirectory + '\\' + file
-        self.logger.info( "Begin processing file: %s" % fullPath )
-        rainGaugeFile = readRainGaugeData()
-        rainGaugeFile.openFile( fullPath )
-        dataRow = rainGaugeFile.processLine()
-        #Get the row id and the summary id.
-        rainGaugeId = file.split('.')
-        #id = self.rainGaugeInfo[rainGaugeId[0]]  
-        #updateID = id['updateid']
-        #summaryID = id['summaryid']
-        while( dataRow != None ):
-          if( dataRow.ID > 0 ):
-            updateType = dataRow.ID & 1
-            if( updateType == 1):
-              if( self.db.writePrecip( dataRow.dateTime, rainGaugeId[0], dataRow.batteryVoltage, dataRow.programCode, dataRow.rainfall ) == False ):
-                self.logger.error( 'Failed to write the precipitation data into the database. Terminating execution.' )
-                sys.exit(-1)
-            elif( updateType == 0 ):
-              if( self.db.write24HourSummary( dataRow.dateTime, rainGaugeId[0], dataRow.rainfall ) == False ):
-                self.logger.error( 'Failed to write the summary precipitation data into the database. Terminating execution.' )
-                sys.exit(-1)
-            else:
-                self.logger.error( 'File Line: %d ID: %d is not valid' % ( rainGaugeFile.file.line_num, dataRow.ID ) )                           
+    try:
+      for file in self.fileList:
+        try:
+          startTime = 0.0
+          if( sys.platform == 'win32'):
+            startTime = time.clock()
           else:
-            self.logger.error( 'No record processed from line: %d' % rainGaugeFile.file.line_num )
-                                    
-
+            startTime = time.time()
+          fullPath = self.fileDirectory + file
+          self.logger.info( "Begin processing file: %s" % fullPath )
+          rainGaugeFile = readRainGaugeData()
+          rainGaugeFile.openFile( fullPath )
           dataRow = rainGaugeFile.processLine()
-       
-      except StopIteration,e:
-        self.logger.info( 'EOF file: %s. Processed: %d lines' % ( file, rainGaugeFile.file.line_num ) )
-      except Exception,e:
-        self.logger.error(str(e) + ' Terminating execution')
-        sys.exit(-1)
-        
-      fileProcdCnt += 1
-      try:
-        #Commit all the entries into the database for this file.
-        self.logger.info( 'Committing SQL inserts' )
-        self.db.dbCon.commit()
-      except sqlite3.Error, e:
-        self.logger.error(e.args[0] + ' Terminating execution')
-        sys.exit(-1)
+          #Get the row id and the summary id.
+          rainGaugeId = file.split('.')
+          #id = self.rainGaugeInfo[rainGaugeId[0]]  
+          #updateID = id['updateid']
+          #summaryID = id['summaryid']
+          while( dataRow != None ):
+            if( dataRow.ID > 0 ):
+              updateType = dataRow.ID & 1
+              if( updateType == 1):
+                if( self.db.writePrecip( dataRow.dateTime, rainGaugeId[0].lower(), dataRow.batteryVoltage, dataRow.programCode, dataRow.rainfall ) == False ):
+                  self.logger.error( 'Failed to write the precipitation data into the database. Terminating execution.' )
+                  sys.exit(-1)
+              elif( updateType == 0 ):
+                if( self.db.write24HourSummary( dataRow.dateTime, rainGaugeId[0].lower(), dataRow.rainfall ) == False ):
+                  self.logger.error( 'Failed to write the summary precipitation data into the database. Terminating execution.' )
+                  sys.exit(-1)
+              else:
+                  self.logger.error( 'File Line: %d ID: %d is not valid' % ( rainGaugeFile.file.line_num, dataRow.ID ) )                           
+            else:
+              self.logger.error( 'No record processed from line: %d' % rainGaugeFile.file.line_num )
+                                      
+            dataRow = rainGaugeFile.processLine()
+         
+        except StopIteration,e:
+          self.logger.info( 'EOF file: %s. Processed: %d lines' % ( file, rainGaugeFile.file.line_num ) )
+          
+        fileProcdCnt += 1
+        try:
+          #Commit all the entries into the database for this file.
+          self.logger.debug( 'Committing SQL inserts' )
+          self.db.dbCon.commit()
+          endTime = 0.0
+          if( sys.platform == 'win32'):
+            endTime = time.clock()
+          else:
+            endTime = time.time()
+          self.logger.debug( 'Total time to process file: %f seconds' % ( endTime - startTime ) )
+        except sqlite3.Error, e:
+          self.logger.error(e.args[0] + ' Terminating execution')
+          sys.exit(-1)
+    except Exception,e:
+      self.logger.error(str(e) + ' Terminating execution')
+      sys.exit(-1)
         
     self.logger.info( "Finished processing file list. Processed: %d of %d files" % (fileProcdCnt,len( self.fileList )) )
 if __name__ == '__main__':
-  
-  dhecData = processDHECRainGauges("C:\\Documents and Settings\\dramage\workspace\\SVNSandbox\\wqportlet\\trunk\\scripts\\config.xml")
+  if( len(sys.argv) < 2 ):
+    print( "Usage: xmrgFile.py xmlconfigfile")
+    sys.exit(-1)
+  dhecData = processDHECRainGauges(sys.argv[1])
   dhecData.processFiles()
   
 #  xmrg = xmrgFile()
