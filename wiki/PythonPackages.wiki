@@ -1,6 +1,6 @@
 #Python packages needed.
 
-Python version require: 2.5
+Python version required: 2.5
   # [http://codespeak.net/lxml/installation.html lxml]
   # [http://trac.osgeo.org/gdal/wiki/GdalOgrInPython gdal]
   # [http://www.scipy.org/Download numpy]
