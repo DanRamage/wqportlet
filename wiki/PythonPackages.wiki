@@ -1,0 +1,6 @@
+#Python packages needed.
+
+Python version require: 2.5
+  # lxml
+  # [http://trac.osgeo.org/gdal/wiki/GdalOgrInPython gdal]
+  # numpy
