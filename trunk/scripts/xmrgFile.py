@@ -5,6 +5,7 @@ import struct
 import csv
 import time
 import logging
+#import logging.handlers
 from collections import defaultdict  
 from lxml import etree
 
@@ -336,7 +337,7 @@ class readRainGaugeData:
         self.logger.debug( 'Empty row on line: %d moving to next row' % ( self.file.line_num ) )
         return( dataRow )
       elif( len(row) < 6 ):
-        self.logger.debug( "Row: '%s' is missing data on line: %d moving to next row" % ( row, self.file.line_num ) )
+        self.logger.error( "Row: '%s' is missing data on line: %d moving to next row" % ( row, self.file.line_num ) )
         return( dataRow )
       #1st entry is rain gauge ID
       if( len(row[0])):
@@ -360,7 +361,8 @@ class readRainGaugeData:
         datetime = time.strftime( '%Y-%m-%dT%H:%M:00', datetime )      
         dataRow.dateTime = datetime
       else:
-        self.logger.debug( "Missing a date field on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+        self.logger.error( "Missing a date field on line: %d in row: '%s', moving to next row" % ( self.file.line_num, row ) )
+        return( dataRow )
         
       if( len(row[4])):
           dataRow.batteryVoltage = float(row[4])
@@ -377,7 +379,6 @@ class readRainGaugeData:
         self.logger.error( "Rainfall field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
       #print( 'Processing line: %d %s' % ( self.file.line_num, row ) )
       return(dataRow)
-      #No more rows to iterate.
    
     except csv.Error, e:
       self.lastErrorMsg = ('File %s. Line %d: %s' % (self.filePath, self.file.line_num, e))
@@ -397,13 +398,15 @@ class dhecDB:
   def __init__(self, dbName):
     self.logger = logging.getLogger("dhec_logger.dhecDB")
     self.logger.info("creating an instance of dhecDB")
+    self.totalRowsProcd = 0
+    self.rowErrorCnt = 0
     try:
       self.dbCon = sqlite3.connect( dbName )
     except sqlite3.Error, e:
-      self.logger.error( e.args[0] + ' Terminating script.' )
+      self.logger.critical( e.args[0] + ' Terminating script.' )
       sys.exit(-1)
     except Exception, e:
-      self.logger.error( str(e) + ' Terminating script.' )
+      self.logger.critical( str(e) + ' Terminating script.' )
       sys.exit(-1)
 
   def writePrecip( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
@@ -413,10 +416,18 @@ class dhecDB:
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
+      self.totalRowsProcd += 1
       return(True)
     
+    #Duplicate data. 
+    except sqlite3.IntegrityError, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
+    
     except sqlite3.Error, e:
-      self.logger.error( e.args[0] + 'SQL: ' + sql )
+      self.rowErrorCnt += 1
+      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      sys.exit(-1)
       
     return(False)         
 
@@ -427,8 +438,35 @@ class dhecDB:
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
+      self.totalRowsProcd += 1
+      return(True)
+
+    #Duplicate data. 
+    except sqlite3.IntegrityError, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
+    
     except sqlite3.Error, e:
-      self.logger.error( e.args[0] + 'SQL: ' + sql )
+      self.rowErrorCnt += 1
+      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      sys.exit(-1)
+    return(False)
+  
+  def writeJunkTest( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
+    sql = "INSERT INTO precipi  \
+          (date,rain_gauge,batt_voltage,program_code,rainfall ) \
+          VALUES( '%s','%s',%3.2f,%.2f,%2.4f );" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      self.totalRowsProcd += 1
+      return(True)
+    
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      
+    return(False)         
 
 """
 Class: processDHECRainGauges
@@ -444,6 +482,9 @@ class processDHECRainGauges:
     dbConnection is a connected connection to the database we are going to store the data in.
   """
   def __init__(self, xmlConfigFile):
+    self.totalLinesProcd = 0        #Total number of lines processed from all files.
+    self.totalLinesUnprocd = 0      #Total number of lines unable to be processed for some reason/
+    self.totalTime = 0.0            #Total execution time.
     try:
       xmlTree = etree.parse(xmlConfigFile)
 
@@ -455,11 +496,17 @@ class processDHECRainGauges:
       logFh = logging.FileHandler(logFile)
       logFh.setLevel(logging.DEBUG)
       # create formatter and add it to the handlers
-      formatter = logging.Formatter("%(asctime)s,%(name)s,%(levelname)s,%(message)s")
+      formatter = logging.Formatter("%(asctime)s,%(name)s,%(levelname)s,%(lineno)d,%(message)s")
       logFh.setFormatter(formatter)
+
+      #Create the log rotation handler.
+      #handler = logging.handlers.RotatingFileHandler( logFile, maxBytes=500, backupCount=5)      
+      #self.logger.addHandler(handler)
+
       # add the handlers to the logger
       self.logger.addHandler(logFh)
       self.logger.info('Log file opened')
+
 
       dbPath = xmlTree.xpath( '//database/db/name' )[0].text
       self.logger.debug( 'Database path: %s' % dbPath )
@@ -505,14 +552,19 @@ class processDHECRainGauges:
   def processFiles(self):        
     fileProcdCnt = 0
     try:
+      self.logger.info( "------------------------------------------------------------" )
       for file in self.fileList:
+        self.linesSkipped = 0
+        self.dbRowsNotInserted = 0
+        startTime = 0.0
+        if( sys.platform == 'win32'):
+          startTime = time.clock()
+        else:
+          startTime = time.time()
         try:
-          startTime = 0.0
-          if( sys.platform == 'win32'):
-            startTime = time.clock()
-          else:
-            startTime = time.time()
           fullPath = self.fileDirectory + file
+          
+          self.logger.info( "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" )
           self.logger.info( "Begin processing file: %s" % fullPath )
           rainGaugeFile = readRainGaugeData()
           rainGaugeFile.openFile( fullPath )
@@ -524,44 +576,76 @@ class processDHECRainGauges:
           #summaryID = id['summaryid']
           while( dataRow != None ):
             if( dataRow.ID > 0 ):
+              #The idea behind this is that there are 2 ID types in the data. One with a signature of xx1 is a normal
+              #10 minute interval sample, one with an xx2 signature is the 24 hour summary. So if the first bit is
+              #set, my assumption is that it's a 10 minute sample.
               updateType = dataRow.ID & 1
               if( updateType == 1):
                 if( self.db.writePrecip( dataRow.dateTime, rainGaugeId[0].lower(), dataRow.batteryVoltage, dataRow.programCode, dataRow.rainfall ) == False ):
-                  self.logger.error( 'Failed to write the precipitation data into the database. Terminating execution.' )
-                  sys.exit(-1)
+                  self.logger.error( 'Failed to write the precipitation data into the database. File Line: %d' % rainGaugeFile.file.line_num )
+                  self.dbRowsNotInserted += 1                           
               elif( updateType == 0 ):
                 if( self.db.write24HourSummary( dataRow.dateTime, rainGaugeId[0].lower(), dataRow.rainfall ) == False ):
-                  self.logger.error( 'Failed to write the summary precipitation data into the database. Terminating execution.' )
-                  sys.exit(-1)
+                  self.logger.error( 'Failed to write the summary precipitation data into the database. File Line: %d' % rainGaugeFile.file.line_num )
+                  self.dbRowsNotInserted += 1                           
               else:
-                  self.logger.error( 'File Line: %d ID: %d is not valid' % ( rainGaugeFile.file.line_num, dataRow.ID ) )                           
+                  self.logger.error( 'File Line: %d ID: %d is not valid' % ( rainGaugeFile.file.line_num, dataRow.ID ) )
+                  self.linesSkipped += 1                           
             else:
               self.logger.error( 'No record processed from line: %d' % rainGaugeFile.file.line_num )
+              self.linesSkipped += 1                           
                                       
             dataRow = rainGaugeFile.processLine()
          
         except StopIteration,e:
-          self.logger.info( 'EOF file: %s. Processed: %d lines' % ( file, rainGaugeFile.file.line_num ) )
+          if( self.linesSkipped ):
+            self.logger.error( 'Unable to process: %d lines out of %d lines' % (self.linesSkipped, rainGaugeFile.file.line_num) )
+            self.totalLinesUnprocd += self.linesSkipped
+          else:
+            self.logger.info( 'Total lines processed: %d' % rainGaugeFile.file.line_num )
+          self.logger.info( 'EOF file: %s.' % file )
+          self.totalLinesProcd += rainGaugeFile.file.line_num
           
         fileProcdCnt += 1
         try:
+          #self.db.writeJunkTest( '00-00-00T00:00:00', 'TEST',-1,-1,-1)
           #Commit all the entries into the database for this file.
           self.logger.debug( 'Committing SQL inserts' )
           self.db.dbCon.commit()
+          if( self.dbRowsNotInserted ):
+            self.logger.error('Unable to insert: %d rows into the database.' % self.dbRowsNotInserted )
           endTime = 0.0
           if( sys.platform == 'win32'):
             endTime = time.clock()
           else:
             endTime = time.time()
-          self.logger.debug( 'Total time to process file: %f seconds' % ( endTime - startTime ) )
+          self.logger.debug( 'Total time to process file: %f msec' % ( ( endTime - startTime ) * 1000.0 ) )
+          self.logger.info( "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" )
+         
+          self.totalTime += ( endTime - startTime ) * 1000.0
         except sqlite3.Error, e:
-          self.logger.error(e.args[0] + ' Terminating execution')
+          self.logger.critical(e.args[0] + ' Terminating execution')
           sys.exit(-1)
     except Exception,e:
-      self.logger.error(str(e) + ' Terminating execution')
+      self.logger.critical(str(e) + ' Terminating execution')
       sys.exit(-1)
-        
-    self.logger.info( "Finished processing file list. Processed: %d of %d files" % (fileProcdCnt,len( self.fileList )) )
+    
+    #Log various statistics out.
+    self.logger.info( "###############Final Statistics#########################" )
+    self.logger.info( "Finished processing file list. Processed: %d of %d files." % (fileProcdCnt,len( self.fileList )) )
+    if( self.totalLinesUnprocd ):
+      self.logger.error( "Unable to process: %d of %d lines." % (self.totalLinesUnprocd,self.totalLinesProcd ) )      
+    else:
+      self.logger.debug( "Total Lines Processed: %d" % (self.totalLinesProcd ) )
+    if( self.db.rowErrorCnt ):
+      self.logger.error( "Unable to insert: %d of %d rows into the database" % (self.db.rowErrorCnt,self.db.totalRowsProcd))
+    else:
+      self.logger.debug( "Inserted %d rows into the database" % (self.db.totalRowsProcd))
+      
+    self.logger.debug( "Total Processing Time: %f msecs" % (self.totalTime ) )
+    self.logger.info( "###############Final Statistics#########################" )
+    self.logger.info( "------------------------------------------------------------" )
+      
 if __name__ == '__main__':
   if( len(sys.argv) < 2 ):
     print( "Usage: xmrgFile.py xmlconfigfile")
