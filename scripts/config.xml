@@ -11,16 +11,19 @@
     <logDir>c:\temp\nws_precip\fetchlog\</logDir>
   </fetchLogging>
   <logging>    
-    <logMsgs>1</logMsgs>    
+    <logMsgs>1</logMsgs>
+    <logDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec.log</logDir>
   </logging>
   <database>
     <db>
       <type>sqlite</type>
-      <name>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec.db</name>
+      <name>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec-test.db</name>
     </db>
   </database>
+  
   <rainGaugeProcessing>
-    <rainGaugeFileDir>\\129.252.139.120\dehec</rainGaugeFileDir>
+    
+    <rainGaugeFileDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\raingauge\archives\Rain09\</rainGaugeFileDir>
     
     <rainGaugeList>      
       <rainGauge>
