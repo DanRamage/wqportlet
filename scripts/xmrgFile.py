@@ -402,6 +402,8 @@ class dhecDB:
     self.rowErrorCnt = 0
     try:
       self.dbCon = sqlite3.connect( dbName )
+      #This enables the ability to manipulate rows with the column name instead of an index.
+      self.dbCon.row_factory = sqlite3.Row
     except sqlite3.Error, e:
       self.logger.critical( e.args[0] + ' Terminating script.' )
       sys.exit(-1)
@@ -452,21 +454,144 @@ class dhecDB:
       sys.exit(-1)
     return(False)
   
-  def writeJunkTest( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
-    sql = "INSERT INTO precipi  \
-          (date,rain_gauge,batt_voltage,program_code,rainfall ) \
-          VALUES( '%s','%s',%3.2f,%.2f,%2.4f );" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
+  def getRainGaugeNames(self):
+    gaugeList = []
+    sql = "SELECT DISTINCT(rain_gauge) from monitoring_stations"    
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
-      self.totalRowsProcd += 1
-      return(True)
+      for row in dbCursor:
+        gaugeList.append( row[0] )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      sys.exit(-1)
+    return(gaugeList)
+
+  def getStationNames(self):
+    stationList = []
+    sql = "SELECT station from monitoring_stations"    
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      for row in dbCursor:
+        stationList.append( row[0] )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      sys.exit(-1)
+    return(stationList)
+  
+  def getInspectionDates(self, station):
+    dateList = []
+    sql = "SELECT insp_date FROM dhec_beach WHERE station = '%s' ORDER BY datetime(insp_date) ASC" % station
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      for row in dbCursor:
+        dateList.append( row[0] )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      sys.exit(-1)
+    return(dateList)
+  
+  def writeSummaryForStation(self, datetime, station ):
+    #import datetime
+    
+    sql = "SELECT  dhec_beach.station,dhec_beach.etcoc,dhec_beach.tide,dhec_beach.salinity,dhec_beach.weather,monitoring_stations.rain_gauge,precip_daily_summary.rainfall \
+          FROM dhec_beach,monitoring_stations,precip_daily_summary \
+          WHERE \
+          dhec_beach.station = monitoring_stations.station AND \
+          monitoring_stations.rain_gauge = precip_daily_summary.rain_gauge AND \
+          dhec_beach.station = '%s' AND \
+          datetime(dhec_beach.insp_date) = datetime('%s') and \
+          strftime('%%Y-%%m-%%d', datetime(precip_daily_summary.date)) = strftime('%%Y-%%m-%%d',datetime('%s'))" % ( station,datetime,datetime )
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      beachData = dbCursor.fetchone()
+      if( datetime == '2008-07-01'):
+        i = 0
+      if( beachData != None ):
+        rainGauge = beachData['rain_gauge']
+        if( rainGauge != None ):
+          #Get the last 24 hours summary
+          sum24 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,24)
+          #Get the last 48 hours summary
+          sum48 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,48)
+          #Get the last 72 hours summary
+          sum72 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,72)
+          #Write the summary table
+          etcoc = -1
+          if( beachData['etcoc'] != None and beachData['etcoc'] != '' ):
+            etcoc = beachData['etcoc']
+          salinity = -1
+          if( beachData['salinity'] != None and beachData['salinity'] != ''):
+            salinity = beachData['salinity']
+          tide = -1
+          if( beachData['tide'] != None and beachData['tide'] != '' ):
+            tide = beachData['tide']
+          rainfall = 0.0
+          if( beachData['rainfall'] != None and beachData != '' ):
+            rainfall = beachData['rainfall']
+          sql = "INSERT INTO station_summary \
+                (date,station,rain_gauge,etcoc,salinity,rainfall,tide,rain_summary_24,rain_summary_48,rain_summary_72,weather) \
+                VALUES('%s','%s','%s',%s,%s,%.3f,%s,%.3f,%.3f,%.3f,'%s')" % \
+                (datetime,station,rainGauge,etcoc,salinity,rainfall,tide,sum24,sum48,sum72,beachData['weather'])
+          dbCursor.execute( sql )
+          self.dbCon.commit()
+        return(True)
+      else:
+        self.logger.info("No data for station: %s date: %s. SQL: %s" %(station,datetime,sql))
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+    except Exception, e:
+      self.logger.critical( str(e) + ' Terminating script.' )
+      sys.exit(-1)
+
+    
+    return( False )
+  
+  def getLastNHoursSummaryFromPrecipSummary( self, datetime, rain_gauge, prevHourCnt ):
+    sql = "SELECT SUM(rainfall) \
+           FROM precip_daily_summary \
+           WHERE\
+             rain_gauge = '%s' AND \
+             datetime(date) <= datetime('%s') AND \
+             datetime(date) >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      sum = dbCursor.fetchone()[0]
+      if( sum != None ):
+        return( float(sum) )      
     
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
       self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
-      
-    return(False)         
+    return( -1.0 )
+
+  def getLastNHoursSummary( self, datetime, rain_gauge, prevHourCnt ):
+    sql = "SELECT SUM(rainfall) \
+           FROM precipitation \
+           WHERE\
+             rain_gauge = '%s' AND \
+             datetime(date) <= datetime('%s') AND \
+             datetime(date) >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      sum = dbCursor.fetchone()[0]
+      if( sum != None ):
+        return( float(sum) )      
+    
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+    return( -1.0 )
+  
 
 """
 Class: processDHECRainGauges
@@ -649,11 +774,53 @@ class processDHECRainGauges:
 if __name__ == '__main__':
   if( len(sys.argv) < 2 ):
     print( "Usage: xmrgFile.py xmlconfigfile")
-    sys.exit(-1)
+    sys.exit(-1)    
   dhecData = processDHECRainGauges(sys.argv[1])
-  dhecData.processFiles()
+  stationList = dhecData.db.getStationNames()
+  for station in stationList:
+    dateList = dhecData.db.getInspectionDates(station)
+    for date in dateList:
+      dhecData.db.writeSummaryForStation( date, station )
+  #dhecData.processFiles()
+#  summaryFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\raingauge\\summary.csv", "wa")
+#  summaryFile.write( "Rain Gauge,Summary (inches), Days over 1/2in,Date Range\n" )
+#  dateList = [["2006-03-01","2006-09-30"],["2007-03-01","2007-09-30"], ["2008-03-01","2008-09-30"]]
   
-#  xmrg = xmrgFile()
+#  gaugeList = dhecData.db.getRainGaugeNames()
+#  for datePair in dateList:  
+#    for gauge in gaugeList:
+#      sql = "SELECT SUM(rainfall) FROM precip_daily_summary WHERE  \
+#              rain_gauge = '%s' AND \
+#              date >= strftime('%%Y-%%m-%%dT00:00:00', datetime('%s')) AND \
+#              date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s'))" % (gauge,datePair[0],datePair[1])
+#      try:
+#        dbCursor = dhecData.db.dbCon.cursor()
+#        dbCursor.execute( sql )
+#        sum = 0
+#        row = dbCursor.fetchone()
+#        if(row[0] != None):
+#          sum = float(row[0])
+#
+#        sql = "SELECT COUNT(date) FROM precip_daily_summary WHERE  \
+#              rain_gauge = '%s' AND \
+#              rainfall > 0.5 AND \
+#              date >= strftime('%%Y-%%m-%%dT00:00:00', datetime('%s')) AND \
+#              date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s'))" % (gauge,datePair[0],datePair[1])
+#        dbCursor.execute( sql )
+#        cntoverhalfinch = 0
+#        row = dbCursor.fetchone()
+#        if(row[0] != None):
+#          cntoverhalfinch = int(row[0])
+#        summaryFile.write( "%s,%f,%d,%s to %s\n" % ( gauge,sum,cntoverhalfinch,datePair[0],datePair[1]))
+#      except sqlite3.Error, e:
+#        self.logger.critical('%s SQL: %s Terminating execution' % (e.args[0], sql))
+#        sys.exit(-1)
+#      except Exception,e:
+#        self.logger.critical(str(e) + ' Terminating execution')
+#        sys.exit(-1)
+      
+        
+  #xmrg = xmrgFile()
   #inputFile = "C:\\Temp\\xmrg0506199516z\\xmrg0506199516z"
 #  inputFile = "C:\\Temp\\xmrg0129200918z\\xmrg0129200918z"
 #  xmrg.openFile( inputFile, 0 )
