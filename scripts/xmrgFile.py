@@ -8,6 +8,7 @@ import logging
 #import logging.handlers
 from collections import defaultdict  
 from lxml import etree
+from ftplib import FTP
 
 try:
   from osgeo import gdal
@@ -410,7 +411,18 @@ class dhecDB:
     except Exception, e:
       self.logger.critical( str(e) + ' Terminating script.' )
       sys.exit(-1)
-
+  """
+  Function: writePrecip
+  Purpose: Writes an entry into the precipitation table. Normally this is what we do when we
+   are parsing the rain gauge data file to.
+  Parameters: 
+    datetime is the date and time for the entry
+    rain_gauge is the name of the rain gauge the entry is for
+    batt_voltage is the battery voltage of the rain gauge
+    program_code is teh program code for the rain gauge
+    rainfall is the rainfall amount for
+  Return: True if successful otherwise false. 
+  """
   def writePrecip( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
     sql = "INSERT INTO precipitation  \
           (date,rain_gauge,batt_voltage,program_code,rainfall ) \
@@ -433,6 +445,15 @@ class dhecDB:
       
     return(False)         
 
+  """
+  Function: write24HourSummary
+  Purpose: Writes an entry into the precip_daily_summary table. This is the days summary for the rain gauge.
+  Parameters: 
+    datetime is the date and time for the entry
+    rain_gauge is the name of the rain gauge the entry is for
+    rainfall is the rainfall amount for
+  Return: True if successful otherwise false. 
+  """
   def write24HourSummary( self, datetime,rain_gauge,rainfall ):
     sql = "INSERT INTO precip_daily_summary  \
           (date,rain_gauge,rainfall ) \
@@ -453,7 +474,12 @@ class dhecDB:
       self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
       sys.exit(-1)
     return(False)
-  
+  """
+  Function: getRainGaugeNames
+  Purpose: Queries the monitoring_stations table and returns the distinct rain gauges.  
+  Parameters: None 
+  Return: A list of the rain gauges. If none were found, the list is empty. 
+  """
   def getRainGaugeNames(self):
     gaugeList = []
     sql = "SELECT DISTINCT(rain_gauge) from monitoring_stations"    
@@ -468,6 +494,12 @@ class dhecDB:
       sys.exit(-1)
     return(gaugeList)
 
+  """
+  Function: getStationNames
+  Purpose: Queries the monitoring_stations table and returns the monitoring stations  
+  Parameters: None 
+  Return: A list of the stations. If none were found, the list is empty. 
+  """
   def getStationNames(self):
     stationList = []
     sql = "SELECT station from monitoring_stations"    
@@ -482,6 +514,14 @@ class dhecDB:
       sys.exit(-1)
     return(stationList)
   
+  """
+  Function: getInspectionDates
+  Purpose: Queries the dhec_beach table and returns the dates of the inspections for the given
+    station.
+  Parameters: 
+    station is the name of the station we are quering the dates for.
+  Return: A list of the dates. If none were found, the list is empty. 
+  """
   def getInspectionDates(self, station):
     dateList = []
     sql = "SELECT insp_date FROM dhec_beach WHERE station = '%s' ORDER BY datetime(insp_date) ASC" % station
@@ -496,6 +536,14 @@ class dhecDB:
       sys.exit(-1)
     return(dateList)
   
+  """
+  Function: writeSummaryForStation
+  Purpose:  Writes the entry for day into the summary table. 
+  Parameters:
+    datetime is the date for the summary
+    station is the name of the station we are quering the dates for.
+  Return: A list of the dates. If none were found, the list is empty. 
+  """
   def writeSummaryForStation(self, datetime, station ):
     #import datetime
     
@@ -511,17 +559,33 @@ class dhecDB:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
       beachData = dbCursor.fetchone()
-      if( datetime == '2008-07-01'):
-        i = 0
       if( beachData != None ):
         rainGauge = beachData['rain_gauge']
         if( rainGauge != None ):
+          #Query the rainfall totals over the given hours range. 
           #Get the last 24 hours summary
           sum24 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,24)
           #Get the last 48 hours summary
           sum48 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,48)
           #Get the last 72 hours summary
           sum72 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,72)
+          #Get the last 96 hours summary
+          sum96 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,96)
+          #Get the last 120 hours summary
+          sum120 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,120)
+          #Get the last 144 hours summary
+          sum144 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,144)
+          #Get the last 168 hours summary
+          sum168 = self.getLastNHoursSummaryFromPrecipSummary(datetime,rainGauge,168)
+          #calculate the X day delay totals
+          #2 day delay
+          sum2daydelay = sum48 - sum24
+          #3 day delay
+          sum3daydelay = sum72 - sum48
+          
+          #Get the preceding dry days count, if there are any.
+          dryCnt = self.getPrecedingDryDaysCount('2009-02-01', 'nmb1' )
+          
           #Write the summary table
           etcoc = -1
           if( beachData['etcoc'] != None and beachData['etcoc'] != '' ):
@@ -592,6 +656,29 @@ class dhecDB:
       self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
     return( -1.0 )
   
+  def getPrecedingDryDaysCount(self, datetime, rainGauge ):
+    iDryCnt = 0
+    sql = "Select A.date, A.ndx,  A.rainfall, \
+            Case \
+              When A.rainfall = 0  Then \
+                IFNULL( (Select Max(B.ndx) From precip_daily_summary As B WHERE B.ndx < A.ndx AND B.rainfall=0   ), \
+                (A.ndx) ) \
+              End As grp \
+          From precip_daily_summary As A WHERE rain_gauge = '%s' AND strftime('%%Y-%%m-%%d', datetime(date) ) <= strftime('%%Y-%%m-%%d', datetime('%s', '-1 day') ) ORDER BY datetime(date) DESC" % \
+          ( rainGauge, datetime )
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      for row in dbCursor:
+        if( row['grp'] != None ):
+          iDryCnt += 1
+        else:
+          break
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      iDryCnt = -1
+    return( iDryCnt )
 
 """
 Class: processDHECRainGauges
@@ -632,15 +719,19 @@ class processDHECRainGauges:
       self.logger.addHandler(logFh)
       self.logger.info('Log file opened')
 
-
       dbPath = xmlTree.xpath( '//database/db/name' )[0].text
       self.logger.debug( 'Database path: %s' % dbPath )
       self.db = dhecDB(dbPath) 
       #Get a file list for the directory.
       self.fileDirectory = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )[0].text 
       self.logger.debug( 'Directory for rain gauge data: %s' % self.fileDirectory )
-      self.fileList = os.listdir( self.fileDirectory )
       
+      #Get the settings for ftping the rain gauge data
+      self.rainGaugeFTPAddy = xmlTree.xpath( '//rainGaugeProcessing/ftp/ip' )[0].text
+      self.rainGaugeFTPUser = xmlTree.xpath( '//rainGaugeProcessing/ftp/user' )[0].text
+      self.rainGaugeFTPPwd = xmlTree.xpath( '//rainGaugeProcessing/ftp/passwd' )[0].text
+      self.rainGaugeFTPDir = xmlTree.xpath( '//rainGaugeProcessing/ftp/fileDir' )[0].text
+      self.delServerFiles = xmlTree.xpath( '//rainGaugeProcessing/ftp/delServerFile' )[0].text
       
       #The data files have an ID as the first column with the format of xx1 or xx2. xx1 is the 10 minute
       #data where the xx2 is the 
@@ -666,7 +757,51 @@ class processDHECRainGauges:
   """
   def setFileList(self, fileList ):
     self.fileList = fileList  
-    
+
+  """
+  Function: ftpRainGaugeData
+  Purpose: FTPs the rain gauge csv files onto our local machine for processing. 
+  Parameters:
+  """
+  def ftpRainGaugeData(self):
+    try:      
+      ftp = FTP(self.rainGaugeFTPAddy)
+      ftp.login( self.rainGaugeFTPUser, self.rainGaugeFTPPwd )
+      ftp.cwd(self.rainGaugeFTPDir)
+      #Get a list of the files in the dir
+      fileList = ftp.nlst()
+      for file in fileList:
+        if( file.find( '.csv' ) > 0 ):
+          Filename = self.fileDirectory + file         
+          outFile = open( Filename, 'wt')
+          
+          startTime = 0;
+          if( sys.platform == 'win32'):
+            startTime = time.clock()
+          else:
+            startTime = time.time()            
+          #Download the file into the local file.
+          ftp.retrlines("RETR " + file, lambda s, w=outFile.write: w(s+"\n"))
+
+          if( sys.platform == 'win32'):
+            endTime = time.clock()
+          else:
+            endTime = time.time()
+          
+          self.logger.debug( "FTPd file: %s to %s in %.2f ms" % (file,Filename,(endTime-startTime)*1000.0 ))          
+          outFile.close()
+          if( self.delServerFiles ):
+            ftp.delete( file )
+          
+        else:
+          self.logger.debug( "File: %s is not a csv file" % (file) )
+        
+      return(True)
+      
+    except Exception,e:
+      self.logger.error(str(e) )
+    return(False)
+   
   """
   Function: processFiles
   Purpose: Loops through the fileList and processes the dhec data files. The data is then stored
@@ -678,6 +813,8 @@ class processDHECRainGauges:
     fileProcdCnt = 0
     try:
       self.logger.info( "------------------------------------------------------------" )
+      self.ftpRainGaugeData()
+      self.fileList = os.listdir( self.fileDirectory )      
       for file in self.fileList:
         self.linesSkipped = 0
         self.dbRowsNotInserted = 0
@@ -690,6 +827,11 @@ class processDHECRainGauges:
           fullPath = self.fileDirectory + file
           
           self.logger.info( "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" )
+          #Make sure we are trying to process a file and not a directory.
+          if( os.path.isfile(fullPath) != True ):
+            self.logger.debug( "%s is not a file, skipping" % (fullPath) )
+            continue
+            
           self.logger.info( "Begin processing file: %s" % fullPath )
           rainGaugeFile = readRainGaugeData()
           rainGaugeFile.openFile( fullPath )
@@ -699,6 +841,7 @@ class processDHECRainGauges:
           #id = self.rainGaugeInfo[rainGaugeId[0]]  
           #updateID = id['updateid']
           #summaryID = id['summaryid']
+          self.writeSummaryTable = False
           while( dataRow != None ):
             if( dataRow.ID > 0 ):
               #The idea behind this is that there are 2 ID types in the data. One with a signature of xx1 is a normal
@@ -770,17 +913,20 @@ class processDHECRainGauges:
     self.logger.debug( "Total Processing Time: %f msecs" % (self.totalTime ) )
     self.logger.info( "###############Final Statistics#########################" )
     self.logger.info( "------------------------------------------------------------" )
-      
+     
 if __name__ == '__main__':
   if( len(sys.argv) < 2 ):
     print( "Usage: xmrgFile.py xmlconfigfile")
     sys.exit(-1)    
+
+
   dhecData = processDHECRainGauges(sys.argv[1])
-  stationList = dhecData.db.getStationNames()
-  for station in stationList:
-    dateList = dhecData.db.getInspectionDates(station)
-    for date in dateList:
-      dhecData.db.writeSummaryForStation( date, station )
+  dhecData.processFiles()  
+#  stationList = dhecData.db.getStationNames()
+#  for station in stationList:
+#    dateList = dhecData.db.getInspectionDates(station)
+#    for date in dateList:
+#      dhecData.db.writeSummaryForStation( date, station )
   #dhecData.processFiles()
 #  summaryFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\raingauge\\summary.csv", "wa")
 #  summaryFile.write( "Rain Gauge,Summary (inches), Days over 1/2in,Date Range\n" )
