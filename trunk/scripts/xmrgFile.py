@@ -679,7 +679,41 @@ class dhecDB:
       self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
       iDryCnt = -1
     return( iDryCnt )
-
+  """
+  Function: calcRainfallIntensity
+  Purpose: 2.  Rainfall Intensity- calculated on a per day basis as the total rain per day in inches divided 
+  by the total amount of time in minutes over which that rain fell.  
+  This was calculated by dividing the 24-hour total rainfall by the number of 10 minute increments in the day 
+  with recorded rain multiplied by ten----[Total Rain/(# increments with rain *10)]
+  Parameters:
+    rainGauge is the name of the rain gauge we are investigating.
+    date is the begin date/time of where we want to start getting the rainfall data.
+    minutes is the number of minutes we want to collect rainfall for.
+  """
+  def calcRainfallIntensity(self, rainGauge, date, minutes ):
+    rainfallIntensity = -1
+    try:
+      #Get the entries where there was rainfall for the date, going forward the minutes number of minutes. 
+      sql = "SELECT rainfall from precipitation \
+              WHERE rain_gauge = '%s' AND \
+              datetime(date) >= datetime( '%s' ) AND datetime(date) < datetime( '%s', '%d minutes' ) AND \
+              rainfall > 0;" \
+              % (rainGauge, date, date, minutes )
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      totalRainfall = 0
+      numRainEntries = 0
+      rainfallIntensity = 0
+      for row in dbCursor:
+        totalRainfall += row['rainfall']
+        numRainEntries += 1
+        
+      rainfallIntensity = totalRainfall / ( numRainEntries * 10 )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      
+    return(rainfallIntensity)
 """
 Class: processDHECRainGauges
 Purpose: Given a list of dhec rain gauge files, this class will process them all and store the results into
@@ -701,7 +735,13 @@ class processDHECRainGauges:
       xmlTree = etree.parse(xmlConfigFile)
 
       #Create our logging object.
-      logFile = xmlTree.xpath( '//logging/logDir' )[0].text
+      val = xmlTree.xpath( '//logging/logDir' )
+      if(len(val)):
+        logFile = val[0].text
+      else:
+        print( 'ERROR: //logging/logDir not defined in config file. Terminating script' )
+        sys.exit(-1)     
+
       self.logger = logging.getLogger("dhec_logger")
       self.logger.setLevel(logging.DEBUG)
       # create file handler which logs even debug messages
@@ -719,19 +759,59 @@ class processDHECRainGauges:
       self.logger.addHandler(logFh)
       self.logger.info('Log file opened')
 
-      dbPath = xmlTree.xpath( '//database/db/name' )[0].text
+      val = xmlTree.xpath( '//database/db/name' )
+      if(len(val)):
+        dbPath = val[0].text
+      else:
+        self.logger.error( 'ERROR: //database/db/name not defined in config file. Terminating script' )
+        sys.ext(-1)      
+        
       self.logger.debug( 'Database path: %s' % dbPath )
       self.db = dhecDB(dbPath) 
       #Get a file list for the directory.
-      self.fileDirectory = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )[0].text 
+      val = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )
+      if(len(val)):
+        self.fileDirectory = val[0].text 
+      else:
+        self.logger.error( 'ERROR: //rainGaugeProcessing/rainGaugeFileDir not defined in config file. Terminating script' )
+        sys.ext(-1)      
+      
       self.logger.debug( 'Directory for rain gauge data: %s' % self.fileDirectory )
       
       #Get the settings for ftping the rain gauge data
-      self.rainGaugeFTPAddy = xmlTree.xpath( '//rainGaugeProcessing/ftp/ip' )[0].text
-      self.rainGaugeFTPUser = xmlTree.xpath( '//rainGaugeProcessing/ftp/user' )[0].text
-      self.rainGaugeFTPPwd = xmlTree.xpath( '//rainGaugeProcessing/ftp/passwd' )[0].text
-      self.rainGaugeFTPDir = xmlTree.xpath( '//rainGaugeProcessing/ftp/fileDir' )[0].text
-      self.delServerFiles = xmlTree.xpath( '//rainGaugeProcessing/ftp/delServerFile' )[0].text
+      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/ip' )
+      if( len(val) ):
+        self.rainGaugeFTPAddy = val[0].text       
+      else:
+        self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/ip not defined in config file. Terminating script' )
+        sys.ext(-1)      
+      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/user' )
+      if( len(val) ):
+        self.rainGaugeFTPUser = val[0].text 
+      else:
+        self.logger.error( 'ERROR: ///rainGaugeProcessing/ftp/user not defined in config file. Terminating script' )
+        sys.ext(-1)      
+      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/passwd' )
+      if( len(val) ):
+        self.rainGaugeFTPPwd = val[0].text
+      else:
+        self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/passwd not defined in config file. Terminating script' )
+        sys.ext(-1)      
+      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/fileDir' )
+      if(len(val)):
+        self.rainGaugeFTPDir = val[0].text
+      else:
+        self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/fileDir not defined in config file. Terminating script' )
+        sys.ext(-1)      
+      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/delServerFile' )
+      if(len(val)):
+        self.delServerFiles = int(val[0].text)
+      else:
+        self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/delServerFile not defined in config file. Terminating script' )
+        sys.ext(-1)      
+        
+      self.logger.debug( 'Raingauge FTP Info: IP: %s User: %s Pwd: %s Dir: %s Delete Server Files: %d' % 
+                         (self.rainGaugeFTPAddy, self.rainGaugeFTPUser, self.rainGaugeFTPPwd, self.rainGaugeFTPDir, self.delServerFiles))
       
       #The data files have an ID as the first column with the format of xx1 or xx2. xx1 is the 10 minute
       #data where the xx2 is the 
@@ -921,7 +1001,7 @@ if __name__ == '__main__':
 
 
   dhecData = processDHECRainGauges(sys.argv[1])
-  dhecData.processFiles()  
+  #dhecData.processFiles()  
 #  stationList = dhecData.db.getStationNames()
 #  for station in stationList:
 #    dateList = dhecData.db.getInspectionDates(station)
