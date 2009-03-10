@@ -367,13 +367,13 @@ class readRainGaugeData:
         
       if( len(row[4])):
           dataRow.batteryVoltage = float(row[4])
-      else:
-        self.logger.debug( "Battery voltage field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+      #else:
+      #  self.logger.debug( "Battery voltage field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
 
       if( len(row[5])):
         dataRow.programCode = float(row[5])
-      else:
-        self.logger.debug( "Program Code field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
+      #else:
+      #  self.logger.debug( "Program Code field empty on line: %d in row: '%s'" % ( self.file.line_num, row ) )
       if( len(row[6])):
         dataRow.rainfall = float(row[6])
       else:
@@ -658,6 +658,7 @@ class dhecDB:
   
   def getPrecedingDryDaysCount(self, datetime, rainGauge ):
     iDryCnt = 0
+    secondsInDay = 24 * 60 * 60
     sql = "Select A.date, A.ndx,  A.rainfall, \
             Case \
               When A.rainfall = 0  Then \
@@ -669,14 +670,27 @@ class dhecDB:
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
+      t1 = time.mktime(time.strptime( datetime, '%Y-%m-%dT%H:%M:00' ))
       for row in dbCursor:
         if( row['grp'] != None ):
-          iDryCnt += 1
+          t2 = time.mktime(time.strptime( row['date'], '%Y-%m-%dT%H:%M:00' ))         
+          #We have to make sure the data points are 1 day apart, according the thesis if we are missing
+          #a data point, we don't calculate the preceding dry days.
+          if( ( t1 - t2 ) <= secondsInDay ):
+            iDryCnt += 1
+            t1 = t2
+          else:
+            iDryCnt = -1
+            break
         else:
           break
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
       self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      iDryCnt = -1
+    except TypeError, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s" % (str(e)) )
       iDryCnt = -1
     return( iDryCnt )
   """
@@ -893,7 +907,6 @@ class processDHECRainGauges:
     fileProcdCnt = 0
     try:
       self.logger.info( "------------------------------------------------------------" )
-      self.ftpRainGaugeData()
       self.fileList = os.listdir( self.fileDirectory )      
       for file in self.fileList:
         self.linesSkipped = 0
@@ -1001,6 +1014,8 @@ if __name__ == '__main__':
 
 
   dhecData = processDHECRainGauges(sys.argv[1])
+  dhecData.db.getPrecedingDryDaysCount( '2008-12-31T23:59:00', 'gardcty' )
+  #dhecData.ftpRainGaugeData()
   #dhecData.processFiles()  
 #  stationList = dhecData.db.getStationNames()
 #  for station in stationList:
