@@ -337,8 +337,8 @@ class readRainGaugeData:
       if( len(row) == 0 ):
         self.logger.debug( 'Empty row on line: %d moving to next row' % ( self.file.line_num ) )
         return( dataRow )
-      elif( len(row) < 6 ):
-        self.logger.error( "Row: '%s' is missing data on line: %d moving to next row" % ( row, self.file.line_num ) )
+      elif( len(row) < 7 ):
+        self.logger.error( "Row: '%s' does not have enough columns to process on line: %d moving to next row" % ( row, self.file.line_num ) )
         return( dataRow )
       #1st entry is rain gauge ID
       if( len(row[0])):
@@ -423,10 +423,10 @@ class dhecDB:
     rainfall is the rainfall amount for
   Return: True if successful otherwise false. 
   """
-  def writePrecip( self, datetime,rain_gauge,batt_voltage,program_code,rainfall ):
+  def writePrecip( self, datetime,rain_gauge,batt_voltage,program_code,rainfall):
     sql = "INSERT INTO precipitation  \
           (date,rain_gauge,batt_voltage,program_code,rainfall ) \
-          VALUES( '%s','%s',%3.2f,%.2f,%2.4f );" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
+          VALUES( '%s','%s',%3.2f,%.2f,%2.4f);" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
@@ -524,7 +524,7 @@ class dhecDB:
   """
   def getInspectionDates(self, station):
     dateList = []
-    sql = "SELECT insp_date FROM dhec_beach WHERE station = '%s' ORDER BY datetime(insp_date) ASC" % station
+    sql = "SELECT insp_date FROM dhec_beach WHERE station = '%s' ORDER BY insp_date ASC" % station
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
@@ -623,8 +623,8 @@ class dhecDB:
            FROM precip_daily_summary \
            WHERE\
              rain_gauge = '%s' AND \
-             datetime(date) <= datetime('%s') AND \
-             datetime(date) >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
+             date <= datetime('%s') AND \
+             date >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
@@ -642,8 +642,29 @@ class dhecDB:
            FROM precipitation \
            WHERE\
              rain_gauge = '%s' AND \
-             datetime(date) <= datetime('%s') AND \
-             datetime(date) >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
+             date <= datetime('%s') AND \
+             date >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      sum = dbCursor.fetchone()[0]
+      if( sum != None ):
+        return( float(sum) )      
+    
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+    return( -1.0 )
+
+  def getLastNHoursSummaryEpoch( self, datetime, rain_gauge, prevHourCnt ):
+    epochtime = int(time.mktime(time.strptime( datetime, '%Y-%m-%dT%H:%M:00' )))  
+    endtime = epochtime - ( prevHourCnt * 60 * 60 )
+    sql = "SELECT SUM(rainfall) \
+           FROM precipitation \
+           WHERE\
+             rain_gauge = '%s' AND \
+             epoch_time <= %d AND \
+             epoch_time >= %d" % ( rain_gauge, epochtime, endtime )
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
@@ -710,7 +731,7 @@ class dhecDB:
       #Get the entries where there was rainfall for the date, going forward the minutes number of minutes. 
       sql = "SELECT rainfall from precipitation \
               WHERE rain_gauge = '%s' AND \
-              datetime(date) >= datetime( '%s' ) AND datetime(date) < datetime( '%s', '%d minutes' ) AND \
+              date >= datetime( '%s' ) AND date < datetime( '%s', '%d minutes' ) AND \
               rainfall > 0;" \
               % (rainGauge, date, date, minutes )
       dbCursor = self.dbCon.cursor()
@@ -728,6 +749,56 @@ class dhecDB:
       self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
       
     return(rainfallIntensity)
+  
+  def getTideLevel( self, tideStationID, date ):
+    tideLevel = -1
+    tideStages = [0,100,200,300]
+    sql = "SELECT date,level,level_code FROM daily_tide_range \
+            WHERE station_id = %d AND ( date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s', '-12 hours') AND \
+            date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s', '12 hours') ) \
+            ORDER BY date ASC" % (tideStationID,date,date) 
+    try:
+      epochT1 = time.mktime(time.strptime( date, '%Y-%m-%dT%H:%M:%S' ))
+      prevTime = -1.0
+      curTime = -1.0
+      prevRow = []
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      for row in dbCursor:
+        curTime = time.mktime(time.strptime( row['date'], '%Y-%m-%dT%H:%M:%S' ))
+        if( prevTime != -1.0 ):
+          if( ( epochT1 >= prevTime ) and 
+              ( epochT1 <= curTime ) ):
+              #Figure out if the tide is in Ebb or Flood
+              tideState = -1
+              prevLevel = float(prevRow['level'])
+              curLevel = float(row['level'])
+              if( prevLevel < curLevel ):
+                tideState = 2000
+              else:
+                tideState = 4000
+              #Now figure out if it is 0, 1/4, 1/2, 3/4 stage. We divide the time between the 2 tide changes
+              #up into 4 pieces, then figure out where our query time falls.
+              totalTime = curTime - prevTime
+              qtrTime = totalTime / 4.0
+              tidePos = -1
+              
+              for i in range(0,4):
+                if( ( epochT1 > prevTime ) and
+                    ( epochT1 < ( prevTime + qtrTime ) ) ):
+                   tidePost = i
+                   tideLevel = tideState + tideStages[i]
+                   return( tideLevel )
+                   
+                prevTime += qtrTime
+        prevRow = row
+        prevTime = curTime
+        
+      rainfallIntensity = totalRainfall / ( numRainEntries * 10 )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+    return(tideLevel)
 """
 Class: processDHECRainGauges
 Purpose: Given a list of dhec rain gauge files, this class will process them all and store the results into
@@ -1014,13 +1085,59 @@ if __name__ == '__main__':
 
 
   dhecData = processDHECRainGauges(sys.argv[1])
-  dhecData.db.getPrecedingDryDaysCount( '2008-12-31T23:59:00', 'gardcty' )
+  dhecData.db.getTideLevel( 8661070, '2003-05-14T13:01:00' )
+  #dhecData.db.getPrecedingDryDaysCount( '2008-12-31T07:00:00', 'gardcty' )
   #dhecData.ftpRainGaugeData()
   #dhecData.processFiles()  
-#  stationList = dhecData.db.getStationNames()
-#  for station in stationList:
-#    dateList = dhecData.db.getInspectionDates(station)
-#    for date in dateList:
+  #stationList = dhecData.db.getStationNames()
+  summaryFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\raingauge\\PrecipStats.csv", "wa")
+  #dateList = ['2001','2002','2003','2004','2005','2006','2007','2008','2009']  
+  dateList = ['2001']
+  gaugeList = dhecData.db.getRainGaugeNames()
+  for rainGauge in gaugeList:
+    summaryFile.write( "Rain Gauge: %s\n" % (rainGauge) )
+    for date in dateList:      
+      summaryFile.write( "Year: %s\n" % (date) )
+      startDate = ("%s-01-01") % date
+      endDate = ("%s-12-31") % date
+      sql = "SELECT * FROM precipitation WHERE \
+              rain_gauge = '%s' AND \
+              date >= datetime('%s') AND date <= ('%s')" % ( rainGauge,startDate,endDate)
+      try:
+        dbCursor = dhecData.db.dbCon.cursor()
+        dbCursor.execute( sql )
+        updateInterval = 10 * 60 #Each update should be every 10 minutes, we want to convert to seconds for epoch time compares.
+        missingInterval = 0        
+        t2 = -1
+        firstdate = ''
+        lastdate = ''
+        prevDate = ''
+        #test = time.mktime(time.strptime( '2001-09-01T23:59:00', '%Y-%m-%dT%H:%M:00' ))
+        for row in dbCursor:
+          lastdate = row['date']
+          t1 = time.mktime(time.strptime( lastdate, '%Y-%m-%dT%H:%M:00' ))
+          if(t2 != -1):
+            # Give a padding of 5 minutes(300secs) to see if the update is falling in the right place.
+            if( ( ( t1 - t2 ) > ( updateInterval + 300 ) ) ):
+              #if( test == t1 or test == t2 ):
+              #  i = 0
+              missingInterval = ( (t1 - t2) / updateInterval ) - 1
+              summaryFile.write( "%s missing %d intervals\n" % (prevDate,missingInterval))
+          else:
+            firstdate = row['date']
+          prevDate = row['date']
+          t2 = t1
+
+        summaryFile.write( "Starting date: %s Ending date: %s\n" %( firstdate,lastdate))
+      except sqlite3.Error, e:
+        self.logger.critical('%s SQL: %s Terminating execution' % (e.args[0], sql))
+        sys.exit(-1)
+      except Exception,e:
+        self.logger.critical(str(e) + ' Terminating execution')
+        sys.exit(-1)
+
+
+
 #      dhecData.db.writeSummaryForStation( date, station )
   #dhecData.processFiles()
 #  summaryFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\raingauge\\summary.csv", "wa")
