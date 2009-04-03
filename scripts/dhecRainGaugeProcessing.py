@@ -730,7 +730,31 @@ class processDHECRainGauges:
   """
   def setFileList(self, fileList ):
     self.fileList = fileList  
-
+    
+  """
+  Function: deleteRainGaugeDataFiles
+  Purpose: Deletes the rain gauge files in the rain gauge dir.
+  Parameters:
+  """
+  def deleteRainGaugeDataFiles(self):
+    self.fileList = os.listdir( self.fileDirectory )      
+    try:
+      for file in self.fileList:
+        fullPath = self.fileDirectory + file
+        
+        #Make sure we are trying to delete a file and not a directory.
+        if( os.path.isfile(fullPath) != True ):
+          self.logger.debug( "%s is not a file, skipping" % (fullPath) )
+          continue  
+        else:
+          os.remove( fullPath )
+          self.logger.debug( "Deleted rain gauge file: %s" % (fullPath) )
+          
+    except Exception,e:
+      self.logger.error(str(e) + ' Terminating script.')
+      sys.exit(-1)
+          
+        
   """
   Function: ftpRainGaugeData
   Purpose: FTPs the rain gauge csv files onto our local machine for processing. 
