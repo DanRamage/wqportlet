@@ -12,7 +12,6 @@ from ftplib import FTP
 from pysqlite2 import dbapi2 as sqlite3
 
 
-
 """
   Class: rainGaugeData
   Purpose: Simple class that represents a processed row from a dhec rain gauge file.
@@ -607,6 +606,24 @@ class dhecDB:
       self.rowErrorCnt += 1
       self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
     return(tideLevel)
+  """
+  Function: getPlatforms
+  Purpose: Returns the platforms(rain gauges, monitoring stations) from the platforms table
+  """
+  def getPlatforms(self):
+    try:
+      #whereClause = "WHERE active = 1"
+      #if( !active ):
+      #  where = "WHERE active = 0"
+      sql = "SELECT * from platforms"
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      return( dbCursor )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+    return( None )
+  
 """
 Class: processDHECRainGauges
 Purpose: Given a list of dhec rain gauge files, this class will process them all and store the results into
@@ -706,6 +723,11 @@ class processDHECRainGauges:
       self.logger.debug( 'Raingauge FTP Info: IP: %s User: %s Pwd: %s Dir: %s Delete Server Files: %d' % 
                          (self.rainGaugeFTPAddy, self.rainGaugeFTPUser, self.rainGaugeFTPPwd, self.rainGaugeFTPDir, self.delServerFiles))
       
+      val = xmlTree.xpath( '//rainGaugeProcessing/outputs/kml/filePath' )
+      if(len(val)):
+        self.kmlFilePath = val[0].text
+      else:
+        self.logger.error( 'ERROR: //rainGaugeProcessing/outputs/kml/filePath, cannot output KML file' )
       #The data files have an ID as the first column with the format of xx1 or xx2. xx1 is the 10 minute
       #data where the xx2 is the 
       #self.rainGaugeInfo = defaultdict(dict)
@@ -909,7 +931,54 @@ class processDHECRainGauges:
     self.logger.debug( "Total Processing Time: %f msecs" % (self.totalTime ) )
     self.logger.info( "###############Final Statistics#########################" )
     self.logger.info( "------------------------------------------------------------" )
-     
+  
+  """
+  Function: writeKMLFile
+  Purpose: Creates a KML file with the latest hour, 24, and 48 hour summaries.
+  """
+  def writeKMLFile(self):
+    from pykml import kml
+
+    if( len( self.kmlFilePath ) ):
+      try:
+        rainGaugeKML = kml.KML()
+        doc = rainGaugeKML.createDocument( "DHEC Rain Gauges" )
+        curTime = time.strftime( '%Y-%m-%dT%H:%M:%S', time.localtime() )
+        dbCursor = self.db.getPlatforms()
+        if( dbCursor != None ):
+          for row in dbCursor:
+            last1 = self.db.getLastNHoursSummary( curTime, row['name'], 1 )  #Get last hours summary
+            if( last1 == -1.0 ):
+              last1 = 'Data unavailable'
+            else:
+              last1 = ( '%4.2f inches' ) % (last1) 
+            last24 = self.db.getLastNHoursSummary( curTime, row['name'], 24 ) #Get last 24 hours summary
+            if( last24 == -1.0 ):
+              last24 = 'Data unavailable'
+            else:
+              last24 = ( '%4.2f inches' ) % (last24) 
+            last48 = self.db.getLastNHoursSummary( curTime, row['name'], 48 ) #Get last 48 hours summary
+            if( last48 == -1.0 ):
+              last48 = 'Data unavailable'
+            else:
+              last48 = ( '%4.2f inches' ) % (last48) 
+            desc = "<table><tr>Location: %s</tr>\
+                    <tr><ul><li>Last Hour: %s</li>\
+                    <li>Last 24 Hours: %s</li>\
+                    <li>Last 48 Hours: %s</li></ul></table>"\
+                    % ( row['description'], last1, last24, last48 )
+            pm = rainGaugeKML.createPlacemark( row['name'], row['latitude'], row['longitude'], desc )
+            doc.appendChild( pm )
+        rainGaugeKML.root.appendChild( doc )  
+        kmlFile = open( self.kmlFilePath, "w" )
+        kmlFile.writelines( rainGaugeKML.writepretty() )
+        kmlFile.close()
+      except Exception,e:
+        self.logger.critical(str(e) + ' Terminating execution')
+        sys.exit(-1)
+    else:
+      self.logger.error( "Cannot write KML file, no filepath provided in config file." )
+      
 if __name__ == '__main__':
   if( len(sys.argv) < 2 ):
     print( "Usage: xmrgFile.py xmlconfigfile")
@@ -920,14 +989,7 @@ if __name__ == '__main__':
 
   dhecData = processDHECRainGauges(sys.argv[1])
   #dhecData.processFiles()
-
-  stationList = dhecData.db.getStationNames()
-  #stationList = ['WAC-004','WAC-005', 'WAC-005A', 'WAC-006', 'WAC-007', 'WAC-008']
-  for station in stationList:
-    dateList = dhecData.db.getInspectionDates( station )
-    for date in dateList:
-      dhecData.db.writeSummaryForStation( date, station )
-    dhecData.db.dbCon.commit()      
+  #Create KML file for obs.
   
   sys.exit(0)  
   
