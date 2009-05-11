@@ -1,29 +1,42 @@
 <environment>
-  <data>
+  <xmrgData>
     <baseURL>http://www.srh.noaa.gov/rfcshare/p_download_hourly/</baseURL>
     <remoteDir>%Y/%Y%m/%Y%m%d/</remoteDir>
     <fileNameFilter>nws_precip</fileNameFilter>
     <downloadDir>c:\temp\nws_precip\shapefiles\</downloadDir>
-  </data>
-  <fetchLogging>
-    <use>1</use>
-    <checkModDate>0</checkModDate>
-    <logDir>c:\temp\nws_precip\fetchlog\</logDir>
-  </fetchLogging>
+  </xmrgData>
   <logging>    
     <logMsgs>1</logMsgs>
     <logDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec.log</logDir>
+    <fetchLogging>
+      <use>1</use>
+      <checkModDate>0</checkModDate>
+      <logDir>c:\temp\nws_precip\fetchlog\</logDir>
+    </fetchLogging>    
   </logging>
+
   <database>
     <db>
       <type>sqlite</type>
-      <name>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec-test.db</name>
+      <name>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec.db</name>
     </db>
   </database>
   
   <rainGaugeProcessing>
     
-    <rainGaugeFileDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\raingauge\archives\Rain09\</rainGaugeFileDir>
+    <rainGaugeFileDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\raingauge\archives\dhec\2004\tst\</rainGaugeFileDir>
+    <ftp>
+      <user>dan</user>
+      <passwd>dan123</passwd>
+      <ip>129.252.139.112</ip>
+      <fileDir>DHEC</fileDir>
+      <delServerFile>1</delServerFile>
+    </ftp>
+    <outputs>
+      <kml>
+        <filePath>C:\Documents and Settings\dramage\workspace\BeachAdvisory\rainGaugeLatest.kml</filePath>
+      </kml>
+    </outputs>
     
     <rainGaugeList>      
       <rainGauge>
