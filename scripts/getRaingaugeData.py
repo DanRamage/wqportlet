@@ -6,7 +6,6 @@ from dhecRainGaugeProcessing import dhecDB
 from dhecRainGaugeProcessing import rainGaugeData
 from dhecRainGaugeProcessing import processDHECRainGauges 
 
-
 if __name__ == '__main__':
   if( len(sys.argv) < 2 ):
     print( "Usage: xmrgFile.py xmlconfigfile")
@@ -16,4 +15,6 @@ if __name__ == '__main__':
   dhecData.deleteRainGaugeDataFiles()
   dhecData.ftpRainGaugeData()
   dhecData.processFiles()
+  #Create KML output.
+  dhecData.writeKMLFile()
 

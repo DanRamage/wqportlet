@@ -962,11 +962,14 @@ class processDHECRainGauges:
               last48 = 'Data unavailable'
             else:
               last48 = ( '%4.2f inches' ) % (last48) 
+            curTime = curTime.replace( "T", " " )
             desc = "<table><tr>Location: %s</tr>\
-                    <tr><ul><li>Last Hour: %s</li>\
+                    <tr><ul>\
+                    <li>Date/Time: %s</li>\
+                    <li>Last Hour: %s</li>\
                     <li>Last 24 Hours: %s</li>\
                     <li>Last 48 Hours: %s</li></ul></table>"\
-                    % ( row['description'], last1, last24, last48 )
+                    % ( row['description'], curTime, last1, last24, last48 )
             pm = rainGaugeKML.createPlacemark( row['name'], row['latitude'], row['longitude'], desc )
             doc.appendChild( pm )
         rainGaugeKML.root.appendChild( doc )  
