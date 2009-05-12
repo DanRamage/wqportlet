@@ -412,8 +412,8 @@ class dhecDB:
            FROM precip_daily_summary \
            WHERE\
              rain_gauge = '%s' AND \
-             date >= datetime( '%s', '-%d hours' ) AND \
-             date < datetime('%s')" \
+             date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
+             date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime('%s') )" \
              % ( rain_gauge, datetime, prevHourCnt, datetime )
     try:
       dbCursor = self.dbCon.cursor()
@@ -432,8 +432,8 @@ class dhecDB:
            FROM precipitation \
            WHERE\
              rain_gauge = '%s' AND \
-             date <= datetime('%s') AND \
-             date >= datetime( '%s', '-%d hours' )" % ( rain_gauge, datetime, datetime, prevHourCnt )
+             date <= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime('%s') ) AND \
+             date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) )" % ( rain_gauge, datetime, datetime, prevHourCnt )
     try:
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
@@ -943,21 +943,27 @@ class processDHECRainGauges:
       try:
         rainGaugeKML = kml.KML()
         doc = rainGaugeKML.createDocument( "DHEC Rain Gauges" )
+        #DHEC doesn't reset the time on the rain gauges to deal with daylight savings, so if
+        #we are in DST then we need to subtract one from the time to get the last hour.
+        isdst = time.localtime()[-1]
+        dstOffset = 0
+        if( isdst ):
+          dstOffset = 1
         curTime = time.strftime( '%Y-%m-%dT%H:%M:%S', time.localtime() )
         dbCursor = self.db.getPlatforms()
         if( dbCursor != None ):
           for row in dbCursor:
-            last1 = self.db.getLastNHoursSummary( curTime, row['name'], 1 )  #Get last hours summary
+            last1 = self.db.getLastNHoursSummary( curTime, row['name'], ( 1 + dstOffset ) )  #Get last hours summary
             if( last1 == -1.0 ):
               last1 = 'Data unavailable'
             else:
               last1 = ( '%4.2f inches' ) % (last1) 
-            last24 = self.db.getLastNHoursSummary( curTime, row['name'], 24 ) #Get last 24 hours summary
+            last24 = self.db.getLastNHoursSummary( curTime, row['name'], ( 24 + dstOffset ) ) #Get last 24 hours summary
             if( last24 == -1.0 ):
               last24 = 'Data unavailable'
             else:
               last24 = ( '%4.2f inches' ) % (last24) 
-            last48 = self.db.getLastNHoursSummary( curTime, row['name'], 48 ) #Get last 48 hours summary
+            last48 = self.db.getLastNHoursSummary( curTime, row['name'], ( 48 + dstOffset ) ) #Get last 48 hours summary
             if( last48 == -1.0 ):
               last48 = 'Data unavailable'
             else:
