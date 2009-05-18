@@ -5,7 +5,7 @@ import struct
 import csv
 import time
 import logging
-#import logging.handlers
+import logging.handlers
 from collections import defaultdict  
 from lxml import etree
 from ftplib import FTP
@@ -652,21 +652,38 @@ class processDHECRainGauges:
         print( 'ERROR: //logging/logDir not defined in config file. Terminating script' )
         sys.exit(-1)     
 
+      val = xmlTree.xpath( '//logging/maxBytes' )
+      if(len(val)):
+        maxBytes = val[0].text
+      else:
+        print( 'ERROR: //logging/maxBytes not defined in config file. Using 1000000' )
+        maxBytes = 1000000
+
+      val = xmlTree.xpath( '//logging/backupCount' )
+      if(len(val)):
+        backupCount = val[0].text
+      else:
+        print( 'ERROR: //logging/backupCount not defined in config file. Using 5' )
+        backupCount = 5
+
+
       self.logger = logging.getLogger("dhec_logger")
       self.logger.setLevel(logging.DEBUG)
       # create file handler which logs even debug messages
-      logFh = logging.FileHandler(logFile)
-      logFh.setLevel(logging.DEBUG)
+      #logFh = logging.FileHandler(logFile)
+      #logFh.setLevel(logging.DEBUG)
       # create formatter and add it to the handlers
       formatter = logging.Formatter("%(asctime)s,%(name)s,%(levelname)s,%(lineno)d,%(message)s")
-      logFh.setFormatter(formatter)
+      #logFh.setFormatter(formatter)
 
       #Create the log rotation handler.
-      #handler = logging.handlers.RotatingFileHandler( logFile, maxBytes=500, backupCount=5)      
-      #self.logger.addHandler(handler)
+      handler = logging.handlers.RotatingFileHandler( logFile, "a", maxBytes, backupCount )
+      handler.setLevel(logging.DEBUG)
+      handler.setFormatter(formatter)    
+      self.logger.addHandler(handler)
 
       # add the handlers to the logger
-      self.logger.addHandler(logFh)
+      #self.logger.addHandler(logFh)
       self.logger.info('Log file opened')
 
       val = xmlTree.xpath( '//database/db/name' )
@@ -941,6 +958,7 @@ class processDHECRainGauges:
 
     if( len( self.kmlFilePath ) ):
       try:
+        self.logger.debug( "Creating DHEC rain gauge KML file: %s" %( self.kmlFilePath ) )
         rainGaugeKML = kml.KML()
         doc = rainGaugeKML.createDocument( "DHEC Rain Gauges" )
         #DHEC doesn't reset the time on the rain gauges to deal with daylight savings, so if
