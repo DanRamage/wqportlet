@@ -10,8 +10,10 @@ from collections import defaultdict
 from lxml import etree
 from ftplib import FTP
 from pysqlite2 import dbapi2 as sqlite3
+from xeniatools.xmlConfigFile import xmlConfigFile
 
 
+################################################################################################################  
 """
   Class: rainGaugeData
   Purpose: Simple class that represents a processed row from a dhec rain gauge file.
@@ -25,6 +27,7 @@ class rainGaugeData:
     self.rainfall = -1
     self.windSpeed = -1
     self.windDir  = -1
+################################################################################################################  
 """
   Class: readRainGaugeData
   Purpose: Given a dhec rain gauge csv file, this class will process the file line by line.
@@ -126,6 +129,7 @@ class readRainGaugeData:
       self.logger.error( self.lastErrorMsg )
             
     return(dataRow)
+################################################################################################################  
 """
 Class: dhecDB
 Purpose: Interface to the dhec beach advisory prediction database.
@@ -135,21 +139,93 @@ class dhecDB:
   Function: __init__
   Purpose: Initializes the database object. Connects to the database passed in on the dbName parameter.
   """
-  def __init__(self, dbName):
-    self.logger = logging.getLogger("dhec_logger.dhecDB")
-    self.logger.info("creating an instance of dhecDB")
+  def __init__(self, dbName, loggerName=None):
+    self.logger = None
+    if( loggerName != None ):
+      self.logger = logging.getLogger(loggerName)
+      self.logger.info("creating an instance of dhecDB")
     self.totalRowsProcd = 0
     self.rowErrorCnt = 0
+    self.lastErrorMsg = None
     try:
       self.dbCon = sqlite3.connect( dbName )
       #This enables the ability to manipulate rows with the column name instead of an index.
       self.dbCon.row_factory = sqlite3.Row
     except sqlite3.Error, e:
-      self.logger.critical( e.args[0] + ' Terminating script.' )
+      if( self.logger != None ):
+        self.logger.critical( e.args[0] + ' Terminating script.' )
+      else:
+        print( e.args[0] )
       sys.exit(-1)
     except Exception, e:
-      self.logger.critical( str(e) + ' Terminating script.' )
+      if( self.logger != None ):
+        self.logger.critical( str(e) + ' Terminating script.' )
+      else:
+        print( str(e) )
       sys.exit(-1)
+
+  def __del__(self):
+    self.dbCon.close()
+        
+  def loadSpatiaLiteLib(self, spatiaLiteLibFile):
+    self.dbCon.enable_load_extension(True)
+    sql = 'SELECT load_extension("%s");' % (spatiaLiteLibFile)
+    cursor = self.executeQuery(sql)
+    if(cursor != None):
+      return(True)    
+    return(False)
+  
+  """
+  
+  """
+  def commit(self):
+    try:
+      self.dbCon.commit()
+      return(True)
+    except sqlite3.Error, e:
+      self.lastErrorMsg = e.args[0]
+    except Exception, e:
+      self.lastErrorMsg = str(e)
+    return(False)
+  
+  """
+  Function: executeQuery
+  Purpose: Attempts to execute a SQL statement against the database. If successful returns the cursor.
+  Parameters: 
+    sqlQuery is the query to execute. 
+  Return:
+    A cursor if successful, otherwise None. If the query is an UPDATE or INSERT the cursor
+    will not contain any records to read.
+  """
+  def executeQuery(self, sqlQuery):   
+    try:
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sqlQuery )        
+      return( dbCursor )
+    except sqlite3.Error, e:        
+      self.lastErrorMsg = 'SQL ERROR: ' + e.args[0] + ' SQL: ' + sqlQuery        
+    except Exception, E:
+      self.lastErrorMsg = str(E)                     
+    return(None)
+  
+  """
+  Function: vacuumDB
+  Purpose: Cleanup the database. 
+  Parameters: None
+  Return: True if successful, otherwise False.
+  """    
+  def vacuumDB(self):
+    try:
+      sql = "VACUUM;"
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )    
+      return( True )    
+    except sqlite3.Error, e:        
+      self.lastErrorMsg = 'SQL ERROR: ' + e.args[0] + ' SQL: ' + sqlQuery        
+    except Exception, E:
+      self.lastErrorMsg = str(E)                     
+    return(False)
+    
   """
   Function: writePrecip
   Purpose: Writes an entry into the precipitation table. Normally this is what we do when we
@@ -175,11 +251,17 @@ class dhecDB:
     #Duplicate data. 
     except sqlite3.IntegrityError, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-    
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
+      
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      if( self.logger != None ):      
+        self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
       sys.exit(-1)
       
     return(False)         
@@ -206,53 +288,20 @@ class dhecDB:
     #Duplicate data. 
     except sqlite3.IntegrityError, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-    
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
+
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      if( self.logger != None ):      
+        self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
       sys.exit(-1)
     return(False)
-  """
-  Function: getRainGaugeNames
-  Purpose: Queries the monitoring_stations table and returns the distinct rain gauges.  
-  Parameters: None 
-  Return: A list of the rain gauges. If none were found, the list is empty. 
-  """
-  def getRainGaugeNames(self):
-    gaugeList = []
-    sql = "SELECT DISTINCT(rain_gauge) from monitoring_stations"    
-    try:
-      dbCursor = self.dbCon.cursor()
-      dbCursor.execute( sql )
-      for row in dbCursor:
-        gaugeList.append( row[0] )
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
-      sys.exit(-1)
-    return(gaugeList)
-
-  """
-  Function: getStationNames
-  Purpose: Queries the monitoring_stations table and returns the monitoring stations  
-  Parameters: None 
-  Return: A list of the stations. If none were found, the list is empty. 
-  """
-  def getStationNames(self):
-    stationList = []
-    sql = "SELECT station from monitoring_stations"    
-    try:
-      dbCursor = self.dbCon.cursor()
-      dbCursor.execute( sql )
-      for row in dbCursor:
-        stationList.append( row[0] )
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
-      sys.exit(-1)
-    return(stationList)
-  
+ 
   """
   Function: getInspectionDates
   Purpose: Queries the dhec_beach table and returns the dates of the inspections for the given
@@ -275,7 +324,10 @@ class dhecDB:
         dateList.append( "%sT%02d:%02d:00" %( row['insp_date'],hour,minute ) )
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )      
       sys.exit(-1)
     return(dateList)
   """
@@ -298,7 +350,10 @@ class dhecDB:
 
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )      
       sys.exit(-1)
       
     return(moonPhase)
@@ -366,6 +421,8 @@ class dhecDB:
           if( beachData['salinity'] != None and beachData['salinity'] != ''):
             salinity = int(beachData['salinity'])
           tide = -1
+          if( datetime == '2002-05-16T09:50:00' or datetime == '2002-05-19T08:49:00' ):
+            i = 0
           if( beachData['tide'] != None and beachData['tide'] != '' ):
             tide = int(beachData['tide'])
           if( tide == -1 ):
@@ -393,17 +450,29 @@ class dhecDB:
                   dryCnt,beachData['insp_type'],rainfallIntensity)
           dbCursor.execute( sql )
           #self.dbCon.commit()
-          self.logger.info("Adding summary for station: %s date: %s." %(station,datetime))
+          if( self.logger != None ):
+            self.logger.info("Adding summary for station: %s date: %s." %(station,datetime))
+          else:
+            print("Adding summary for station: %s date: %s." %(station,datetime))
         return(True)
       else:
-        self.logger.info("No data for station: %s date: %s. SQL: %s" %(station,datetime,sql))
+        if( self.logger != None ):
+          self.logger.info("No data for station: %s date: %s. SQL: %s" %(station,datetime,sql))
+        else:
+          print("No data for station: %s date: %s. SQL: %s" %(station,datetime,sql))
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
+        
     except Exception, e:
-      self.logger.critical( str(e) + ' Terminating script.' )
+      if( self.logger != None ):
+        self.logger.critical( str(e) + ' Terminating script.' )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
       sys.exit(-1)
-
     
     return( False )
   
@@ -424,7 +493,10 @@ class dhecDB:
     
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
     return( -1.0 )
 
   def getLastNHoursSummary( self, datetime, rain_gauge, prevHourCnt ):
@@ -443,7 +515,10 @@ class dhecDB:
     
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
     return( -1.0 )
 
   def getLastNHoursSummaryEpoch( self, datetime, rain_gauge, prevHourCnt ):
@@ -464,7 +539,10 @@ class dhecDB:
     
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
     return( -1.0 )
   """
   Function: getPrecedingDryDaysCount
@@ -504,11 +582,17 @@ class dhecDB:
           break
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
       iDryCnt = -1
     except TypeError, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s" % (str(e)) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s" % (str(e)) )
+      else:
+        print( "ErrMsg: %s" % (str(e)) )      
       iDryCnt = -1
     return( iDryCnt )
   """
@@ -552,7 +636,10 @@ class dhecDB:
         
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )      
       
     return(rainfallIntensity)
   
@@ -604,7 +691,10 @@ class dhecDB:
                 
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
     return(tideLevel)
   """
   Function: getPlatforms
@@ -612,18 +702,140 @@ class dhecDB:
   """
   def getPlatforms(self):
     try:
-      #whereClause = "WHERE active = 1"
-      #if( !active ):
-      #  where = "WHERE active = 0"
       sql = "SELECT * from platforms"
       dbCursor = self.dbCon.cursor()
       dbCursor.execute( sql )
       return( dbCursor )
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
-      self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      if( self.logger != None ):      
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+        
+    return( None )
+  """
+  Function: getRainGauges
+  Purpose: Returns the rain gauges from the platforms table
+  """
+  def getRainGauges(self, active=None):
+    try:
+      whereClause = '';
+      if( active != None ):
+        whereClause = " AND active=%d" %(active)
+      sql = "SELECT * from platforms WHERE type = 1 %s" %( whereClause )
+      dbCursor = self.dbCon.cursor()
+      dbCursor.execute( sql )
+      return( dbCursor )
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      if( self.logger != None ):
+        self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+      else:
+        print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
     return( None )
   
+  """
+  Function: getLastXMRGDate
+  Purpose: Returns the last date collected for radar data.
+  Parameters:
+  Return: String with the last date, or None if nothing found.
+  """
+  def getLastXMRGDate(self):
+    try:
+      sql = "SELECT max(collection_date) AS date FROM precipitation_radar"
+      dbCursor = self.executeQuery(sql)
+      if( dbCursor != None ):
+        row = dbCursor.fetchone()
+        if( row != None ):
+          return( row['date'] )
+    except Exception, E:
+      self.logger.error( str(E) + ' Terminating script' )
+      sys.exit(-1)
+    return( None )
+ 
+  """
+  Function: cleanPrecipRadar
+  Purpose: This function will remove all data older the olderThanDate from the precipitation_radar table.
+  Parameters:
+    olderThanDate is the comparison date to use.
+  Return: 
+    True if successful, otherwise False.
+  """
+  def cleanPrecipRadar(self, olderThanDate):
+    sql = "DELETE FROM precipitation_radar WHERE collection_date < strftime('%%Y-%%m-%%dT%%H:%%M:%%S', '%s');" % ( olderThanDate )
+    dbCursor = self.executeQuery(sql)
+    if( dbCursor != None ):
+      try:
+        self.dbCon.commit()
+        return(True)  
+      except sqlite3.Error, e:
+        self.rowErrorCnt += 1
+        if( self.logger != None ):
+          self.logger.error( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+        else:
+          print( "ErrMsg: %s SQL: '%s'" % (e.args[0], sql) )
+        
+    return(False)  
+  
+################################################################################################################  
+class dhecConfigSettings(xmlConfigFile):
+  def __init__(self, xmlConfigFilename):
+    try:
+      #Call parents __init__
+      xmlConfigFile.__init__(self, xmlConfigFilename)
+      
+      #Log file settings
+      self.logFile = self.getEntry( '//logging/logDir' )
+      self.maxBytes = self.getEntry( '//logging/maxBytes' )
+      if( self.maxBytes == None ):
+        self.maxBytes = 100000
+      else:
+        self.maxBytes = int(self.maxBytes)
+        
+      self.backupCount = self.getEntry( '//logging/backupCount' )
+      if( self.backupCount == None ):
+        self.backupCount = 5
+      else:
+        self.backupCount = int(self.backupCount)
+      
+      #DB settings
+      self.dbSettings = self.getDatabaseSettings()
+      self.dbBackupFile = self.getEntry('//environment/database/db/backup/filePath')      
+      
+      #Directory where to store rain gauge files.
+      self.rainGaugeFileDir = self.getEntry('//rainGaugeProcessing/rainGaugeFileDir')
+      
+      #FTP address to pull rain gauge files from.
+      self.rainGaugeFTPAddy = self.getEntry( '//rainGaugeProcessing/ftp/ip' )
+      #FTP login settings.
+      self.rainGaugeFTPUser = self.getEntry( '//rainGaugeProcessing/ftp/user' )
+      self.rainGaugeFTPPwd = self.getEntry( '//rainGaugeProcessing/ftp/passwd' )
+      self.rainGaugeFTPDir = self.getEntry( '//rainGaugeProcessing/ftp/fileDir' )
+      
+      #Flag that specifies if logfiles should be deleted after processing.
+      self.delServerFiles = self.getEntry( '//rainGaugeProcessing/ftp/delServerFile' )
+      if( self.delServerFiles != None ):
+        self.delServerFiles = int( self.delServerFiles )
+      else:
+        self.delServerFiles = 0
+      
+      #File path for KML file creation.
+      self.kmlFilePath = self.getEntry( '//rainGaugeProcessing/outputs/kml/filePath' )    
+  
+      self.spatiaLiteLib = self.getEntry( '//database/db/spatiaLiteLib' )
+      self.baseURL = self.getEntry( '//xmrgData/baseURL' )
+      #This tag is used to help further refine the files we process. For instance, hourly xmrg files are prepended
+      #with xmrg whereas the 6hr and 24hr files aren't. So we could use this to ignore those.
+      self.fileNameFilter = self.getEntry( '//xmrgData/fileNameFilter' )   
+      self.xmrgDLDir = self.getEntry( '//xmrgData/downloadDir' )
+    except Exception, e:
+      print( 'ERROR: ' + str(e)  + ' Terminating script')
+      sys.exit(-1)
+
+    
+  
+################################################################################################################  
 """
 Class: processDHECRainGauges
 Purpose: Given a list of dhec rain gauge files, this class will process them all and store the results into
@@ -642,125 +854,96 @@ class processDHECRainGauges:
     self.totalLinesUnprocd = 0      #Total number of lines unable to be processed for some reason/
     self.totalTime = 0.0            #Total execution time.
     try:
-      xmlTree = etree.parse(xmlConfigFile)
-
+      #xmlTree = etree.parse(xmlConfigFile)
+      self.configSettings = dhecConfigSettings( xmlConfigFile )
+      
       #Create our logging object.
-      val = xmlTree.xpath( '//logging/logDir' )
-      if(len(val)):
-        logFile = val[0].text
-      else:
+      if(self.configSettings.logFile == None):
         print( 'ERROR: //logging/logDir not defined in config file. Terminating script' )
         sys.exit(-1)     
 
-      val = xmlTree.xpath( '//logging/maxBytes' )
-      if(len(val)):
-        maxBytes = val[0].text
-      else:
-        print( 'ERROR: //logging/maxBytes not defined in config file. Using 1000000' )
-        maxBytes = 1000000
-
-      val = xmlTree.xpath( '//logging/backupCount' )
-      if(len(val)):
-        backupCount = val[0].text
-      else:
-        print( 'ERROR: //logging/backupCount not defined in config file. Using 5' )
-        backupCount = 5
-
-
       self.logger = logging.getLogger("dhec_logger")
       self.logger.setLevel(logging.DEBUG)
-      # create file handler which logs even debug messages
-      #logFh = logging.FileHandler(logFile)
-      #logFh.setLevel(logging.DEBUG)
       # create formatter and add it to the handlers
       formatter = logging.Formatter("%(asctime)s,%(name)s,%(levelname)s,%(lineno)d,%(message)s")
-      #logFh.setFormatter(formatter)
 
       #Create the log rotation handler.
-      handler = logging.handlers.RotatingFileHandler( logFile, "a", maxBytes, backupCount )
+      handler = logging.handlers.RotatingFileHandler( self.configSettings.logFile, "a", self.configSettings.maxBytes, self.configSettings.backupCount )
       handler.setLevel(logging.DEBUG)
       handler.setFormatter(formatter)    
       self.logger.addHandler(handler)
-
       # add the handlers to the logger
-      #self.logger.addHandler(logFh)
       self.logger.info('Log file opened')
-
-      val = xmlTree.xpath( '//database/db/name' )
-      if(len(val)):
-        dbPath = val[0].text
-      else:
+      
+      if( self.configSettings.dbSettings['dbName'] == None ):
         self.logger.error( 'ERROR: //database/db/name not defined in config file. Terminating script' )
-        sys.ext(-1)      
-        
-      self.logger.debug( 'Database path: %s' % dbPath )
-      self.db = dhecDB(dbPath) 
+        sys.exit(-1)                      
+      self.logger.debug( 'Database path: %s' % (self.configSettings.dbSettings['dbName']) )
+      self.db = dhecDB(self.configSettings.dbSettings['dbName'])
+            
       #Get a file list for the directory.
-      val = xmlTree.xpath( '//rainGaugeProcessing/rainGaugeFileDir' )
-      if(len(val)):
-        self.fileDirectory = val[0].text 
-      else:
+      if( self.configSettings.rainGaugeFileDir == None ):
         self.logger.error( 'ERROR: //rainGaugeProcessing/rainGaugeFileDir not defined in config file. Terminating script' )
-        sys.ext(-1)      
+        sys.exit(-1)      
       
-      self.logger.debug( 'Directory for rain gauge data: %s' % self.fileDirectory )
+      self.logger.debug( 'Directory for rain gauge data: %s' % self.configSettings.rainGaugeFileDir )
       
-      #Get the settings for ftping the rain gauge data
-      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/ip' )
-      if( len(val) ):
-        self.rainGaugeFTPAddy = val[0].text       
-      else:
+      #Check the settings for ftping the rain gauge data
+      if( self.configSettings.rainGaugeFTPAddy == None ):       
         self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/ip not defined in config file. Terminating script' )
-        sys.ext(-1)      
-      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/user' )
-      if( len(val) ):
-        self.rainGaugeFTPUser = val[0].text 
-      else:
+        sys.exit(-1)      
+      if(  self.configSettings.rainGaugeFTPUser == None ): 
         self.logger.error( 'ERROR: ///rainGaugeProcessing/ftp/user not defined in config file. Terminating script' )
-        sys.ext(-1)      
-      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/passwd' )
-      if( len(val) ):
-        self.rainGaugeFTPPwd = val[0].text
-      else:
+        sys.exit(-1)      
+      if( self.configSettings.rainGaugeFTPPwd == None ):
         self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/passwd not defined in config file. Terminating script' )
-        sys.ext(-1)      
-      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/fileDir' )
-      if(len(val)):
-        self.rainGaugeFTPDir = val[0].text
-      else:
+        sys.exit(-1)      
+      if( self.configSettings.rainGaugeFTPDir == None ):
         self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/fileDir not defined in config file. Terminating script' )
-        sys.ext(-1)      
-      val = xmlTree.xpath( '//rainGaugeProcessing/ftp/delServerFile' )
-      if(len(val)):
-        self.delServerFiles = int(val[0].text)
-      else:
+        sys.exit(-1)      
+      if( self.configSettings.delServerFiles == None ):
         self.logger.error( 'ERROR: //rainGaugeProcessing/ftp/delServerFile not defined in config file. Terminating script' )
-        sys.ext(-1)      
+        sys.exit(-1)      
         
       self.logger.debug( 'Raingauge FTP Info: IP: %s User: %s Pwd: %s Dir: %s Delete Server Files: %d' % 
-                         (self.rainGaugeFTPAddy, self.rainGaugeFTPUser, self.rainGaugeFTPPwd, self.rainGaugeFTPDir, self.delServerFiles))
+                         (self.configSettings.rainGaugeFTPAddy, self.configSettings.rainGaugeFTPUser, self.configSettings.rainGaugeFTPPwd, self.configSettings.rainGaugeFTPDir, self.configSettings.delServerFiles))
       
-      val = xmlTree.xpath( '//rainGaugeProcessing/outputs/kml/filePath' )
-      if(len(val)):
-        self.kmlFilePath = val[0].text
-      else:
+      if( self.configSettings.kmlFilePath == None ):
         self.logger.error( 'ERROR: //rainGaugeProcessing/outputs/kml/filePath, cannot output KML file' )
-      #The data files have an ID as the first column with the format of xx1 or xx2. xx1 is the 10 minute
-      #data where the xx2 is the 
-      #self.rainGaugeInfo = defaultdict(dict)
-      #rainGauge = xmlTree.xpath( '//environment/rainGaugeProcessing/rainGaugeList')
-      #for child in rainGauge[0].getchildren():
-      #  name = child.xpath( 'name' )[0].text 
-      #  updateID = int(child.xpath( 'fileID' )[0].text) 
-      #  summaryID = int(child.xpath( 'file24hrSumId' )[0].text)
-      #  self.rainGaugeInfo[name]['updateid'] = updateID
-      #  self.rainGaugeInfo[name]['summaryid'] = summaryID
-      
+        
+      self.emailList = []
+      emailList = self.configSettings.getEntry( '//rainGaugeProcessing/alert/emailList' )
+      if( emailList != None ):
+        #List of email addresses to send the alert to.
+        emailList = emailList.split(',')
+        for email in emailList:
+          self.emailList.append( email ) 
+        val = self.configSettings.getEntry( '//rainGaugeProcessing/alert/lagTimeAlert' )
+        if( val != None ):
+          #This is the number of hours we can miss updates for the rain gauge data before we send an email alert.
+          #Convert it into seconds.
+          self.lagAlertTime = ( float(val) * 3600.0 )
+        else:
+          self.logger.error( "ERROR: //rainGaugeProcessing/alert/lagTimeAlert missing, cannot send email alert if data is missing"  )      
+      else:
+        self.logger.debug( "//rainGaugeProcessing/alert/emailList missing, cannot send email alert if data is missing"  )
+                              
     except OSError, e:
       print( 'ERROR: ' + str(e) + ' Terminating script' )      
+      sys.exit(-1)
     except Exception, e:
       print( 'ERROR: ' + str(e)  + ' Terminating script')
-      
+      sys.exit(-1)
+  """
+  Function: __del__
+  Purpose: Destructor. Used to make sure the logger gets completely shutdown. 
+  """
+  def __del__(self):
+    #Cleanup the logger.
+    if( self.logger != None ):
+      for handler in self.logger.handlers:
+        self.logger.removeHandler( handler )
+        handler.close()
   """
   Function: setFileList
   Purpose: Allows us to override the fileList of csv files to process. 
@@ -776,10 +959,10 @@ class processDHECRainGauges:
   Parameters:
   """
   def deleteRainGaugeDataFiles(self):
-    self.fileList = os.listdir( self.fileDirectory )      
+    self.fileList = os.listdir( self.configSettings.rainGaugeFileDir )      
     try:
       for file in self.fileList:
-        fullPath = self.fileDirectory + file
+        fullPath = self.configSettings.rainGaugeFileDir + file
         
         #Make sure we are trying to delete a file and not a directory.
         if( os.path.isfile(fullPath) != True ):
@@ -801,14 +984,14 @@ class processDHECRainGauges:
   """
   def ftpRainGaugeData(self):
     try:      
-      ftp = FTP(self.rainGaugeFTPAddy)
-      ftp.login( self.rainGaugeFTPUser, self.rainGaugeFTPPwd )
-      ftp.cwd(self.rainGaugeFTPDir)
+      ftp = FTP(self.configSettings.rainGaugeFTPAddy)
+      ftp.login( self.configSettings.rainGaugeFTPUser, self.configSettings.rainGaugeFTPPwd )
+      ftp.cwd(self.configSettings.rainGaugeFTPDir)
       #Get a list of the files in the dir
       fileList = ftp.nlst()
       for file in fileList:
         if( file.find( '.csv' ) > 0 ):
-          Filename = self.fileDirectory + file         
+          Filename = self.configSettings.rainGaugeFileDir + file         
           outFile = open( Filename, 'wt')
           
           startTime = 0;
@@ -826,7 +1009,7 @@ class processDHECRainGauges:
           
           self.logger.debug( "FTPd file: %s to %s in %.2f ms" % (file,Filename,(endTime-startTime)*1000.0 ))          
           outFile.close()
-          if( self.delServerFiles ):
+          if( self.configSettings.delServerFiles ):
             ftp.delete( file )
           
         else:
@@ -849,7 +1032,7 @@ class processDHECRainGauges:
     fileProcdCnt = 0
     try:
       self.logger.info( "------------------------------------------------------------" )
-      self.fileList = os.listdir( self.fileDirectory )      
+      self.fileList = os.listdir( self.configSettings.rainGaugeFileDir )      
       for file in self.fileList:
         self.linesSkipped = 0
         self.dbRowsNotInserted = 0
@@ -859,7 +1042,7 @@ class processDHECRainGauges:
         else:
           startTime = time.time()
         try:
-          fullPath = self.fileDirectory + file
+          fullPath = self.configSettings.rainGaugeFileDir + file
           
           self.logger.info( "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" )
           #Make sure we are trying to process a file and not a directory.
@@ -948,7 +1131,86 @@ class processDHECRainGauges:
     self.logger.debug( "Total Processing Time: %f msecs" % (self.totalTime ) )
     self.logger.info( "###############Final Statistics#########################" )
     self.logger.info( "------------------------------------------------------------" )
+    
+  """
+  Function: vacuumDB
+  Purpose: Frees up unused space in the database.
+  """  
+  def vacuumDB(self):
+    db = dhecDB(self.configSettings.dbSettings['dbName'], 'dhec_logger')
+    if( db.vacuumDB() != None ):
+      self.logger.debug("Vacuumed database.")
+      return( True )
+    else:
+      self.logger.error( "Database vacuum failed; %s" %( db.lastErrorMsg ) )
+      db.lastErrorMsg = ""
+    return( False )
+      
+    
   
+  """
+  Function: checkDataFlow
+  Purpose: Checks the rain gauges to see if the last date/time entry is within the time interval specified in the log
+  file. Used to alert people on the email list if we don't seem to be getting the data files.
+  Config file entries need:
+  <rainGaugeProcessing>
+    <alert>
+      <lagTimeAlert></lagTimeAlert>       Number of hours data not collected for a given rain gauge to send alert.
+      <emailList></emailList>             Comma delimited list of email addresses to send alert to.
+    </alert>
+  </rainGaugeProcessing>  
+  """
+  def checkDataFlow(self):
+    sendAlertEmail = False
+    if( len( self.emailList )):
+      sendAlertEmail = True
+    dbCursor = self.db.getRainGauges()
+    if( dbCursor != None ):
+      emailMsg = ''
+      rainGaugeList = ''
+      #To get the current epoch time in our time zone, we use the timezone value + the dstOffset.
+      #timezone does not take daylight savings into account, so we manually do that.
+      isdst = time.localtime()[-1]
+      dstOffset = 0
+      if( isdst ):
+        dstOffset = 3600
+      curEpochTime = ( time.time() )                 
+      for row in dbCursor:
+        sql = "SELECT max(date) AS date from precipitation WHERE rain_gauge = '%s'" %( row['name'] )
+        dateCursor = self.db.dbCon.cursor()
+        dateCursor.execute( sql )
+        dateRow = dateCursor.fetchone() 
+        if( dateRow != None ):          
+          dataEpochTime = time.mktime( time.strptime(dateRow['date'], '%Y-%m-%dT%H:%M:%S') )
+          dif = curEpochTime - dataEpochTime
+          if( dif >  self.lagAlertTime ):
+            if( sendAlertEmail ):
+              rainGaugeList += "<li>Rain Gauge: %s last entry date: %s is older than %f hour</li>" % ( row['name'], dateRow['date'], ( self.lagAlertTime / 3600.0 ) )   
+            self.logger.error( "Rain Gauge: %s last entry date: %s is older than %4.1f hours" % ( row['name'], dateRow['date'], ( self.lagAlertTime / 3600.0 ) ) )            
+        dateCursor.close()
+      dbCursor.close()
+      if( len(rainGaugeList) ):
+        import smtplib
+        from email.MIMEMultipart import MIMEMultipart
+        from email.MIMEText import MIMEText   
+        emailMsg = "<ul>%s</ul>" %( rainGaugeList )
+        SERVER = "inlet.geol.sc.edu"  
+        FROM = "dan@inlet.geol.sc.edu"
+        TO = self.emailList     
+        BODY = emailMsg      
+        message = ("MIME-Version: 1.0\r\nContent-type: text/html; \
+        charset=utf-8\r\nFrom: %s\r\nTo: %s\r\nSubject: DHEC Rain Gauge Alert\r\n" %
+        (FROM, ", ".join(TO))) + BODY        
+        # Send the mail
+        try:   
+          server = smtplib.SMTP(SERVER)
+          server.sendmail(FROM, TO, message)
+          server.quit()       
+          self.logger.debug( "Sending alert email." )
+        except Exception, E:
+          self.logger.error( ( str(E) ) )
+  
+        
   """
   Function: writeKMLFile
   Purpose: Creates a KML file with the latest hour, 24, and 48 hour summaries.
@@ -956,9 +1218,9 @@ class processDHECRainGauges:
   def writeKMLFile(self):
     from pykml import kml
 
-    if( len( self.kmlFilePath ) ):
+    if( self.configSettings.kmlFilePath != None ):
       try:
-        self.logger.debug( "Creating DHEC rain gauge KML file: %s" %( self.kmlFilePath ) )
+        self.logger.debug( "Creating DHEC rain gauge KML file: %s" %( self.configSettings.kmlFilePath ) )
         rainGaugeKML = kml.KML()
         doc = rainGaugeKML.createDocument( "DHEC Rain Gauges" )
         #DHEC doesn't reset the time on the rain gauges to deal with daylight savings, so if
@@ -968,7 +1230,7 @@ class processDHECRainGauges:
         if( isdst ):
           dstOffset = 1
         curTime = time.strftime( '%Y-%m-%dT%H:%M:%S', time.localtime() )
-        dbCursor = self.db.getPlatforms()
+        dbCursor = self.db.getRainGauges()
         if( dbCursor != None ):
           for row in dbCursor:
             last1 = self.db.getLastNHoursSummary( curTime, row['name'], ( 1 + dstOffset ) )  #Get last hours summary
@@ -997,7 +1259,7 @@ class processDHECRainGauges:
             pm = rainGaugeKML.createPlacemark( row['name'], row['latitude'], row['longitude'], desc )
             doc.appendChild( pm )
         rainGaugeKML.root.appendChild( doc )  
-        kmlFile = open( self.kmlFilePath, "w" )
+        kmlFile = open( self.configSettings.kmlFilePath, "w" )
         kmlFile.writelines( rainGaugeKML.writepretty() )
         kmlFile.close()
       except Exception,e:
@@ -1005,127 +1267,160 @@ class processDHECRainGauges:
         sys.exit(-1)
     else:
       self.logger.error( "Cannot write KML file, no filepath provided in config file." )
+  """
+  Function: backupData
+  Purpose: Rollover precipitation data in the live database older than 30 days into the backup database.
+  """    
+  def backupData(self):
+    self.logger.info("-----------------------------------------------------------------------")  
+    self.logger.info( "Beginning data backup/rollover." )
+    
+    curYear = time.strftime('%Y',time.localtime())
+    backupDB = None
+    filePath = "%s%s/" % (self.configSettings.dbBackupFile, curYear )
+    backupFilename = "%s%s-dhec.db" % ( filePath, curYear )
+    ################################################################################
+    #Test to see if the database exists.
+    if( not os.path.isfile(backupFilename) ):    
+      #Check to see if the directory exists
+      if( not os.path.exists( filePath ) ):
+        os.mkdir(filePath)
+        self.logger.info( "Directory: %s does not exist, creating." %(filePath))
+        
+      self.logger.info( "File: %s does not exist, creating." %(backupFilename))
+        
+      backupDB = dhecDB(backupFilename,"dhec_logger")
+      #Now create the tables for precipitation and precip_daily_summary.
+      sql = "CREATE TABLE \"precipitation\" (\"Ndx\" INTEGER PRIMARY KEY  NOT NULL ,"\
+            "\"date\" DATETIME NOT NULL ,"\
+            "\"rain_gauge\" TEXT NOT NULL ,"\
+            "\"batt_voltage\" FLOAT,"\
+            "\"program_code\" FLOAT,"\
+            "\"rainfall\" FLOAT NOT NULL )"
+      dbCursor = backupDB.executeQuery(sql)
+      if(dbCursor == None ):
+        self.logger.error( "Failed to create table: precipitation." )
+        sys.exit(-1)
+      self.logger.info( "Created table precipitation." );
+      #Now Create the index
+      sql = "CREATE UNIQUE INDEX \"idx_precipitation\" ON \"precipitation\" (\"date\" ASC, \"rain_gauge\" ASC)"
+      dbCursor = backupDB.executeQuery(sql)
+      if(dbCursor == None ):
+        self.logger.error( "Failed to create index: idx_precipitation." )
+        sys.exit(-1)
+      self.logger.info( "Created index idx_precipitation." );
+        
+      sql = "CREATE TABLE \"precip_daily_summary\""\
+          "(\"Ndx\" INTEGER PRIMARY KEY  NOT NULL ,"\
+           "\"date\" DATETIME NOT NULL ,"\
+           "\"rain_gauge\" TEXT NOT NULL ,"\
+           "\"rainfall\" FLOAT NOT NULL )"
+      dbCursor = backupDB.executeQuery(sql)
+      if(dbCursor == None ):
+        self.logger.error( "Failed to create table: precip_daily_summary." )
+        sys.exit(-1)
+      self.logger.info( "Created table precip_daily_summary." );
+        
+      #Now Create the index
+      sql = "CREATE UNIQUE INDEX \"idx_precip_daily_summary\" ON \"precip_daily_summary\" (\"date\" ASC, \"rain_gauge\" ASC)"
+      dbCursor = backupDB.executeQuery(sql)
+      if(dbCursor == None ):
+        self.logger.error( "Failed to create index: idx_precip_daily_summary." )
+        sys.exit(-1)
+      self.logger.info( "Created index idx_precip_daily_summary." );      
+    else:
+      backupDB = dhecDB(backupFilename,"dhec_logger")
+      self.logger.info( "Connecting to database: %s" % (backupFilename) )
+    ################################################################################
+      
+    ################################################################################
+    #On a platform by platform basis, get all data that is not in the current month.    
+    dbCursor = self.db.getRainGauges()
+    #Cutoff date, we want to keep last 30 days.  
+    
+    cutoffDate = time.strftime( "%Y-%m-%dT00:00:00", time.localtime(time.time()-(30 * 24 * 60 * 60)))
+    gaugeList = []
+    for row in dbCursor:    
+      gaugeList.append(row['name'])
+    dbCursor.close()
+    for rainGauge in gaugeList:
+      self.logger.info( "Processing precipitation table data for rain gauge: %s" % (rainGauge))
+      sql = "SELECT * FROM precipitation WHERE date < '%s' AND rain_gauge='%s'" %(cutoffDate,rainGauge) 
+      resultsCursor = self.db.executeQuery(sql)
+      rowCnt = 0
+      if(resultsCursor != None):
+        for item in resultsCursor:
+          backupDB.writePrecip( item['date'], 
+                                item['rain_gauge'], 
+                                item['batt_voltage'], 
+                                item['program_code'], 
+                                item['rainfall'])   
+          rowCnt += 1               
+        if( not backupDB.commit() ):
+          self.logger.error( backupDB.lastErrorMsg )
+          sys.exit(-1)
+        self.logger.info( "Successfully processed and committed: %d rows into backup." % (rowCnt) )
+        resultsCursor.close()
+        
+        #Now we delete the records from the source DB.
+        self.logger.info( "Deleting backed up records from source database.")
+        sql = "DELETE FROM precipitation WHERE date < '%s' and rain_gauge='%s'" % (cutoffDate,rainGauge)
+        resultsCursor = self.db.executeQuery(sql)
+        if(resultsCursor != None):
+          if(not self.db.commit()):
+            self.logger.error(self.db.lastErrorMsg)
+            sys.exit(-1)
+        else:
+          self.logger.error(self.db.lastErrorMsg)
+          sys.exit(-1)
+        resultsCursor.close()
+        
+      self.logger.info( "Processing precip_daily_summary table data for rain gauge: %s" % (rainGauge))
+      rowCnt = 0
+      sql = "SELECT * FROM precip_daily_summary WHERE date < '%s' AND rain_gauge='%s'" %(cutoffDate,rainGauge) 
+      resultsCursor = self.db.executeQuery(sql)
+      if(resultsCursor != None):
+        for item in resultsCursor:
+          backupDB.write24HourSummary( item['date'], 
+                                        item['rain_gauge'], 
+                                        item['rainfall'])     
+          rowCnt += 1               
+               
+        if( not backupDB.commit() ):
+          self.logger.error( backupDB.lastErrorMsg )
+          sys.exit(-1)
+        self.logger.info( "Successfully processed and committed: %d rows into backup." % (rowCnt) )
+        resultsCursor.close()
+        
+        #Now we delete the records from the source DB.
+        self.logger.info( "Deleting backed up records from source database.")
+        sql = "DELETE FROM precip_daily_summary WHERE date < '%s' and rain_gauge='%s'" % (cutoffDate,rainGauge)
+        resultsCursor = self.db.executeQuery(sql)
+        if(resultsCursor != None):
+          if(not self.db.commit()):
+            self.logger.debug(self.db.lastErrorMsg)
+            sys.exit(-1)
+          resultsCursor.close()
+        else:
+          self.logger.error(self.db.lastErrorMsg)
+          sys.exit(-1)
+      else:
+        self.logger.error( self.db.lastErrorMsg )
+        sys.exit(-1)
+    self.logger.info( "Finished data backup/rollover." )
+    self.logger.info("-----------------------------------------------------------------------")  
+      
+################################################################################################################  
       
 if __name__ == '__main__':
   if( len(sys.argv) < 2 ):
     print( "Usage: xmrgFile.py xmlconfigfile")
     sys.exit(-1)    
 
-  #datetime = time.strptime( "2004-07-31", '%Y-%m-%d')
-  #date = time.strftime( '%j', datetime )
 
   dhecData = processDHECRainGauges(sys.argv[1])
+
   #dhecData.processFiles()
   #Create KML file for obs.
-  
-  sys.exit(0)  
-  
-  summaryFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\raingauge\\PrecipStats.csv", "wa")
-  #dateList = ['2001','2002','2003','2004','2005','2006','2007','2008','2009']  
-  dateList = ['2001']
-  gaugeList = dhecData.db.getRainGaugeNames()
-  for rainGauge in gaugeList:
-    summaryFile.write( "Rain Gauge: %s\n" % (rainGauge) )
-    for date in dateList:      
-      summaryFile.write( "Year: %s\n" % (date) )
-      startDate = ("%s-01-01") % date
-      endDate = ("%s-12-31") % date
-      sql = "SELECT * FROM precipitation WHERE \
-              rain_gauge = '%s' AND \
-              date >= datetime('%s') AND date <= ('%s')" % ( rainGauge,startDate,endDate)
-      try:
-        dbCursor = dhecData.db.dbCon.cursor()
-        dbCursor.execute( sql )
-        updateInterval = 10 * 60 #Each update should be every 10 minutes, we want to convert to seconds for epoch time compares.
-        missingInterval = 0        
-        t2 = -1
-        firstdate = ''
-        lastdate = ''
-        prevDate = ''
-        #test = time.mktime(time.strptime( '2001-09-01T23:59:00', '%Y-%m-%dT%H:%M:00' ))
-        for row in dbCursor:
-          lastdate = row['date']
-          t1 = time.mktime(time.strptime( lastdate, '%Y-%m-%dT%H:%M:00' ))
-          if(t2 != -1):
-            # Give a padding of 5 minutes(300secs) to see if the update is falling in the right place.
-            if( ( ( t1 - t2 ) > ( updateInterval + 300 ) ) ):
-              #if( test == t1 or test == t2 ):
-              #  i = 0
-              missingInterval = ( (t1 - t2) / updateInterval ) - 1
-              summaryFile.write( "%s missing %d intervals\n" % (prevDate,missingInterval))
-          else:
-            firstdate = row['date']
-          prevDate = row['date']
-          t2 = t1
-
-        summaryFile.write( "Starting date: %s Ending date: %s\n" %( firstdate,lastdate))
-      except sqlite3.Error, e:
-        self.logger.critical('%s SQL: %s Terminating execution' % (e.args[0], sql))
-        sys.exit(-1)
-      except Exception,e:
-        self.logger.critical(str(e) + ' Terminating execution')
-        sys.exit(-1)
-
-
-
-#      dhecData.db.writeSummaryForStation( date, station )
-  #dhecData.processFiles()
-#  summaryFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\raingauge\\summary.csv", "wa")
-#  summaryFile.write( "Rain Gauge,Summary (inches), Days over 1/2in,Date Range\n" )
-#  dateList = [["2006-03-01","2006-09-30"],["2007-03-01","2007-09-30"], ["2008-03-01","2008-09-30"]]
-  
-#  gaugeList = dhecData.db.getRainGaugeNames()
-#  for datePair in dateList:  
-#    for gauge in gaugeList:
-#      sql = "SELECT SUM(rainfall) FROM precip_daily_summary WHERE  \
-#              rain_gauge = '%s' AND \
-#              date >= strftime('%%Y-%%m-%%dT00:00:00', datetime('%s')) AND \
-#              date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s'))" % (gauge,datePair[0],datePair[1])
-#      try:
-#        dbCursor = dhecData.db.dbCon.cursor()
-#        dbCursor.execute( sql )
-#        sum = 0
-#        row = dbCursor.fetchone()
-#        if(row[0] != None):
-#          sum = float(row[0])
-#
-#        sql = "SELECT COUNT(date) FROM precip_daily_summary WHERE  \
-#              rain_gauge = '%s' AND \
-#              rainfall > 0.5 AND \
-#              date >= strftime('%%Y-%%m-%%dT00:00:00', datetime('%s')) AND \
-#              date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s'))" % (gauge,datePair[0],datePair[1])
-#        dbCursor.execute( sql )
-#        cntoverhalfinch = 0
-#        row = dbCursor.fetchone()
-#        if(row[0] != None):
-#          cntoverhalfinch = int(row[0])
-#        summaryFile.write( "%s,%f,%d,%s to %s\n" % ( gauge,sum,cntoverhalfinch,datePair[0],datePair[1]))
-#      except sqlite3.Error, e:
-#        self.logger.critical('%s SQL: %s Terminating execution' % (e.args[0], sql))
-#        sys.exit(-1)
-#      except Exception,e:
-#        self.logger.critical(str(e) + ' Terminating execution')
-#        sys.exit(-1)
-      
-        
-  #xmrg = xmrgFile()
-  #inputFile = "C:\\Temp\\xmrg0506199516z\\xmrg0506199516z"
-#  inputFile = "C:\\Temp\\xmrg0129200918z\\xmrg0129200918z"
-#  xmrg.openFile( inputFile, 0 )
-#  xmrg.writeASCIIGrid( 'polarstereo', 'C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc')
-  #xmrg.writeASCIIGrid( 'hrap', 'C:\\Temp\\xmrg0506199516z\\xmrg0506199516z.asc')
-  
-#  try:
-#    srcGridFile = gdal.Open('C:\\Temp\\xmrg0129200918z\\xmrg0129200918z.asc', GA_ReadOnly)
-#    geotransform = srcGridFile.GetGeoTransform()
-#    band = srcGridFile.GetRasterBand(1)
-#    print 'Size is ',srcGridFile.RasterXSize,'x',srcGridFile.RasterYSize,'x',srcGridFile.RasterCount
-#    print 'Projection is ',srcGridFile.GetProjection()
-#    print 'Origin = (',geotransform[0], ',',geotransform[3],')'
-#    print 'Pixel Size = (',geotransform[1], ',',geotransform[5],')'
-#    print 'Converting band number',1,'with type',gdal.GetDataTypeName(band.DataType)    
-       
-#  except Exception, E:
-#    print( 'ERROR: ' + str(E) ) 
   
   
