@@ -829,6 +829,14 @@ class dhecConfigSettings(xmlConfigFile):
       #with xmrg whereas the 6hr and 24hr files aren't. So we could use this to ignore those.
       self.fileNameFilter = self.getEntry( '//xmrgData/fileNameFilter' )   
       self.xmrgDLDir = self.getEntry( '//xmrgData/downloadDir' )
+      #Delete data that is older than the LastNDays
+      self.xmrgKeepLastNDays = self.getEntry( '//xmrgData/dbSettings/keepLastNDays' )
+      if(self.xmrgKeepLastNDays != None):
+        self.xmrgKeepLastNDays = int(self.xmrgKeepLastNDays)
+      #Try to fill in any holes in the data going back N days.
+      self.backfillLastNDays = self.getEntry( '//xmrgData/dbSettings/backfillLastNDays' )
+      if(self.backfillLastNDays != None):
+        self.backfillLastNDays = int(self.backfillLastNDays)
     except Exception, e:
       print( 'ERROR: ' + str(e)  + ' Terminating script')
       sys.exit(-1)
@@ -941,9 +949,7 @@ class processDHECRainGauges:
   def __del__(self):
     #Cleanup the logger.
     if( self.logger != None ):
-      for handler in self.logger.handlers:
-        self.logger.removeHandler( handler )
-        handler.close()
+      logging.shutdown()
   """
   Function: setFileList
   Purpose: Allows us to override the fileList of csv files to process. 
