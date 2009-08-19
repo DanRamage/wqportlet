@@ -1,4 +1,5 @@
 import os
+import os.path
 import sys
 import array
 import struct
@@ -281,7 +282,6 @@ class xmrgFile:
     return( inBBOX )
   
   def writeLatLonDB(self, dbFile, minLatLong=None, maxLatLong=None,newCellSize=None,interpolate=False):
-    import os.path
 
     db = dhecDB(dbFile, self.loggerName)     
     if( self.readFileHeader() ):     
@@ -318,7 +318,7 @@ class xmrgFile:
           #In the binary file, the data is stored as hundreths of mm, if we want to write the data as 
           #inches , need to divide by 2540.
           dataConvert = 100.0 
-          dataConvert = dataConvert * 25.4
+          dataConvert = 25.4 * dataConvert 
 
           #If we are using a bounding box, let's get the row/col in hrap coords.
           llHrap = None
@@ -770,6 +770,11 @@ class processXMRGData(object):
       if(self.configSettings.xmrgDLDir == None):
         self.configSettings.xmrgDLDir  = './';         
         self.logger.debug( "//xmrgData/downloadDir not provided, using './'." )
+      if(self.configSettings.xmrgKeepLastNDays == None):
+        self.configSettings.xmrgKeepLastNDays = 7
+        self.logger.debug( "'//xmrgData/dbSettings/keepLastNDays' not provided, using 7 days" )
+      if(self.configSettings.backfillLastNDays == None):
+        self.logger.debug( "'//xmrgData/dbSettings/backfillLastNDays' not provided, will not attempt to backfill data." )
         
     except Exception, E:
       self.lastErrorMsg = str(E)
@@ -790,9 +795,7 @@ class processXMRGData(object):
   def __del__(self):
     #Cleanup the logger.
     if( self.logger != None ):
-      for handler in self.logger.handlers:
-        self.logger.removeHandler( handler )
-        handler.close()
+      logging.shutdown()
     
   def buildXMRGFilename(self, desiredDateTime):
     desiredTime=time.strptime(desiredDateTime, "%Y-%m-%dT%H:00:00")
@@ -811,15 +814,16 @@ class processXMRGData(object):
   def getXMRGFile(self, fileName):
     return(self.remoteFileDL.getFile( fileName, None, False))
       
-  def getLatestHourXMRGData(self,writeToDB=True,writeCSVFile=False,writeASCIIGrid=False,backFillGaps=True):
+  def getLatestHourXMRGData(self,writeToDB=True,writeCSVFile=False,writeASCIIGrid=False):
     
     try: 
       self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True)
       
       #Clean out any data older than 24 hours.
       db = dhecDB(self.configSettings.dbSettings['dbName'], self.loggerName)
-      time24HoursAgo = time.time() - ( 24 * 60 * 60 ) #Current time minus 24 hours worth of seconds.
-      currentDateTime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime(time24HoursAgo))
+      #Current time minus N days worth of seconds.
+      timeNHoursAgo = time.time() - ( self.configSettings.xmrgKeepLastNDays * 24 * 60 * 60 ) 
+      currentDateTime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime(timeNHoursAgo))
       db.cleanPrecipRadar(currentDateTime)
       
       dateList=[]
@@ -830,13 +834,15 @@ class processXMRGData(object):
       dateList.append(latestHour)
       
       #Are we going to try to backfill any gaps in the data?
-      if(backFillGaps):
-        #Generate what the last 24 hour date/times should be.
+      if(self.configSettings.backfillLastNDays):
         baseTime = time.time()-3600
-        for x in range(23):
+        #Now let's build a list of the last N hours of data we should have to see if we have any holes
+        #to fill.
+        lastNHours = self.configSettings.backfillLastNDays * 24
+        for x in range(lastNHours):
           datetime = time.strftime("%Y-%m-%dT%H:00:00", time.localtime(baseTime - ((x+1) * 3600)))          
           dateList.append(datetime)
-        sql = "SELECT DISTINCT(collection_date) as date FROM precipitation_radar;"
+        sql = "SELECT DISTINCT(collection_date) as date FROM precipitation_radar ORDER BY collection_date DESC;"
         dbCursor = db.executeQuery(sql)
         if(dbCursor != None):
           #Now we'll loop through and pull any date from the datebase that matches a date in our list
