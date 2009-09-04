@@ -14,10 +14,9 @@ import gzip
 import traceback
 from numpy import zeros
 from lxml import etree
-sys.path.insert(0, "C:\\Documents and Settings\\dramage\\workspace\\BeachAdvisory") 
-from dhecRainGaugeProcessing import dhecDB
-from dhecRainGaugeProcessing import dhecConfigSettings
+#sys.path.insert(0, "C:\\Documents and Settings\\dramage\\workspace\\BeachAdvisory") 
 from xeniatools import getRemoteFiles
+from xeniatools.xmlConfigFile import xmlConfigFile
 
 #try:
 #  from osgeo import gdal
@@ -70,13 +69,28 @@ class xmrgFile:
     self.xmesh       = 4.7625;
     self.meshdegs    = (self.earthRadius * (1.0 + math.sin(math.radians(self.startLat)))) / self.xmesh
   
+  """
+  Function: Reset
+  Purpose: Prepares the xmrgFile object for reuse. Resets various variables and closes the currently open file object.
+  Parameters: None
+  Return: None
+  """
   def Reset(self):
     self.fileName = ''
     self.lastErrorMsg = ''
     self.srcFileOpen = 0
     self.xmrgFile.close()
-    
-  def openFile(self, filePath, useLog):
+  
+  """
+  Function: openFile
+  Purpose: Attempts to open the file given in the filePath string. If the file is compressed using gzip, this will uncompress
+    the file as well.
+  Parameters:
+    filePath is a string with the full path to the file to open.
+  Return:
+    True if successful, otherwise False.
+  """
+  def openFile(self, filePath):
     self.fileName = filePath
     retVal = False
     try:
@@ -109,6 +123,13 @@ class xmrgFile:
    
     return(retVal)
     
+  """
+  Function: readFileHeader
+  Purpose: For the open file, reads the header. Call this function first before attempting to use readRow or readAllRows.
+    If you don't the file pointer will not be at the correct position.
+  Parameters: None
+  Returns: True if successful, otherwise False.
+  """
   def readFileHeader( self ):
     try:
       #Determine if byte swapping is needed.
@@ -229,6 +250,12 @@ class xmrgFile:
     
     return( False )      
   
+  """
+  Function: readRecordTag
+  Purpose: Reads the tag that surrounds each record in the file.
+  Parameters: None
+  Return: An integer dataArray with the tag data if read, otherwise None.
+  """
   def readRecordTag(self):
     dataArray= array.array('I')
     dataArray.fromfile( self.xmrgFile, 1 )
@@ -241,6 +268,12 @@ class xmrgFile:
       return( None )
     return(dataArray)
   
+  """
+  Function: readRow
+  Purpose: Reads a single row from the file.
+  Parameters: None'
+  Returns: If successful a dataArray containing the row values, otherwise None.
+  """
   def readRow(self):
     #Read off the record header
     tag = self.readRecordTag()
@@ -261,7 +294,15 @@ class xmrgFile:
 
     return( dataArray )
   
+  """
+  Function: readAllRows
+  Purpose: Reads all the rows in the file and stores them in a dataArray object. Data is stored in self.grid.
+  Parameters: None
+  Returns: True if succesful otherwise False.
+  
+  """
   def readAllRows(self):
+    #Create a integer numeric array(from numpy). Dimensions are MAXY and MAXX.
     self.grid = zeros([self.MAXY,self.MAXX],int)
     for row in range( self.MAXY ):    
       dataArray= self.readRow()
@@ -273,7 +314,17 @@ class xmrgFile:
         col+=1
               
     return(True)
-    
+  
+  """
+  Function: inBBOX
+  Purpose: Tests to see if the testLatLong is in the bounding box given by minLatLong and maxLatLong.
+  Parameters:
+    testLatLong is the lat/long pair we are testing.
+    minLatLong is a latLong object representing the bottom left corner.
+    maxLatLong is a latLong object representing the upper right corner.
+  Returns:
+    True if the testLatLong is in the bounding box, otherwise False.
+  """  
   def inBBOX(self, testLatLong, minLatLong, maxLatLong):
     inBBOX = False
     if( ( testLatLong.latitude >= minLatLong.latitude and testLatLong.longitude >= minLatLong.longitude ) and
@@ -281,177 +332,6 @@ class xmrgFile:
       inBBOX = True
     return( inBBOX )
   
-  def writeLatLonDB(self, dbFile, minLatLong=None, maxLatLong=None,newCellSize=None,interpolate=False):
-
-    db = dhecDB(dbFile, self.loggerName)     
-    if( self.readFileHeader() ):     
-      self.logger.debug( "File Origin: X %d Y: %d Columns: %d Rows: %d" %(self.XOR,self.YOR,self.MAXX,self.MAXY))
-      try:
-        if( self.readAllRows() ):
-          
-          #This is the database insert datetime.           
-          datetime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime() )
-          #Parse the filename to get the data time.
-          (directory,filetime) = os.path.split( self.fileName )
-          (filetime,ext) = os.path.splitext( filetime )
-          #Let's get rid of the xmrg verbage so we have the time remaining.
-          #The format for the time on these files is MMDDYYY sometimes a trailing z for
-          #the UTC time zone. 24 hour files don't have the z, or an hour           
-          filetime = filetime.replace('24hrxmrg', '')
-          filetime = filetime.replace('xmrg', '')
-          dateformat = "%m%d%Y%Hz" 
-          if( filetime.rfind( 'z' ) == -1 ):
-            dateformat = "%m%d%Y"  
-          #The XMRG time is UTC, however we want to store all our times as localtimes.
-          isdst = time.localtime()[-1]
-          offset = 0
-          if (isdst):            
-            offset = 4 * 3600
-          else:
-            offset = 5 * 3600
-          #Using mktime() and localtime() is a hack. The time package in python doesn't have a way
-          #to convert a struct_time in UTC to epoch secs. So I just use the local time functions to do what
-          #I want instead of brining in the calender package which has the conversion.
-          secs = time.mktime(time.strptime( filetime, dateformat ))
-          secs -= offset
-          filetime = time.strftime( "%Y-%m-%dT%H:00:00", time.localtime(secs) )
-          #In the binary file, the data is stored as hundreths of mm, if we want to write the data as 
-          #inches , need to divide by 2540.
-          dataConvert = 100.0 
-          dataConvert = 25.4 * dataConvert 
-
-          #If we are using a bounding box, let's get the row/col in hrap coords.
-          llHrap = None
-          urHrap = None
-          startCol = 0
-          startRow = 0
-          if( minLatLong != None and maxLatLong != None ):
-            llHrap = self.latLongToHRAP(minLatLong,True,True)
-            urHrap = self.latLongToHRAP(maxLatLong,True,True)
-            startCol = llHrap.column
-            startRow = llHrap.row
-          recsAdded = 0
-          if( newCellSize == None ):
-            for row in range(startRow,self.MAXY):
-              for col in range(startCol,self.MAXX):
-                val = self.grid[row][col]
-                #If there is no precipitation value, or the value is erroneous 
-                if( val <= 0 ):
-                  #val = -9999.0
-                  continue
-                else:
-                  val /= dataConvert
-                  
-                hrap = hrapCoord( self.XOR + col, self.YOR + row )
-                latlon = self.hrapCoordToLatLong( hrap )                                
-                latlon.longitude *= -1
-                insertSQL = False
-                if( minLatLong != None and maxLatLong != None ):
-                  if( self.inBBOX( latlon, minLatLong, maxLatLong ) ):
-                    insertSQL = True
-                else:
-                  insertSQL = True
-                if( insertSQL ):
-                  wkt = "POINT(%f %f)" %(latlon.longitude, latlon.latitude)
-                  sql = "INSERT INTO precipitation_radar \
-                        (wkt_geometry,insert_date,collection_date,latitude,longitude,precipitation) \
-                        VALUES('%s','%s','%s',%f,%f,%f);" \
-                        %( wkt,datetime,filetime,latlon.latitude,latlon.longitude,val)
-                  cursor = db.executeQuery( sql )
-                  #Problem with the query, since we are working with transactions, we have to rollback.
-                  if( cursor == None ):
-                    self.logger.error( db.lastErrorMsg )
-                    db.lastErrorMsg = None
-                    db.dbCon.rollback()
-                  recsAdded += 1
-          #We are resizing the grid.
-          else:
-            endProcessing = False           
-            spacing = (1.0 / newCellSize)
-            #If we are using a bounding box, let's start going through the grid at the bbox's 
-            #row and column instead of running through the whole grid to get to that point
-            for row in range(startRow,self.MAXY):
-              if( row < self.MAXY - 1):
-                for col in range(startCol,self.MAXX):
-                  if( col < self.MAXX - 1 ):
-                    for i in range( newCellSize ):
-                      for j in range( newCellSize ):
-                        x = spacing * i 
-                        y = spacing * j     
-                        #Are we interpolating the data?
-                        if( interpolate ):  
-                          z0 = self.grid[row][col]
-                          z1 = self.grid[row][col+1]
-                          z2 = self.grid[row+1][col]
-                          z3 = self.grid[row+1][col+1]
-                          val = 0
-                          #If all the data points are 0, no need to run the interpolation.
-                          if( z0 != 0 and z1 != 0 and z3 != 0 ):
-                            val = self.biLinearInterpolatePoint( x,y, z0, z1, z2, z3 )
-                        else:
-                          val = self.grid[row][col] 
-                        #If there is no precipitation value, or the value is erroneous 
-                        if( val <= 0 ):
-                          #val = -9999.0
-                          continue
-                        else:                          
-                          val /= dataConvert          
-  
-                        hrap = hrapCoord( self.XOR + col + x, self.YOR + row + y )              
-                        latlon = self.hrapCoordToLatLong( hrap )              
-                        latlon.longitude *= -1
-                        insertSQL = False   
-                        #If we are using a bounding box, let's see if the coordinate is inside it.               
-                        if( minLatLong != None and maxLatLong != None ):
-                          if( self.inBBOX( latlon, minLatLong, maxLatLong ) ):
-                            insertSQL = True
-                        else:
-                          insertSQL = True
-                        if( insertSQL ):
-                          wkt = "POINT(%f %f)" %(latlon.longitude, latlon.latitude)
-                          sql = "INSERT INTO precipitation_radar \
-                                (wkt_geometry,insert_date,collection_date,latitude,longitude,precipitation) \
-                                VALUES('%s','%s','%s',%f,%f,%f);" \
-                                %( wkt,datetime,filetime,latlon.latitude,latlon.longitude,val)
-                          cursor = db.executeQuery( sql )
-                          #Problem with the query, since we are working with transactions, we have to rollback.
-                          if( cursor == None ):
-                            self.logger.error( db.lastErrorMsg )
-                            db.lastErrorMsg = None
-                            db.dbCon.rollback()
-                          recsAdded += 1
-                            
-                        if( urHrap != None ):
-                          #If we are out of the bounding box area, we can stop the loop.
-                          if( ( col > urHrap.column ) and ( row > urHrap.row  ) ):
-                            endProcessing = True
-                            break                
-                      if( endProcessing ):
-                        break                                      
-                  if( endProcessing ):
-                    break
-              if( endProcessing ):
-                break      
-          #Commit the inserts.    
-          db.dbCon.commit()
-          if( self.logger != None ):
-            self.logger.info( "Processed: %d rows. Added: %d records to database." %((row + 1),recsAdded))
-          else:
-            print( 'Processed %d rows. Added: %d records to database.' % (row + 1),recsAdded )
-  
-      except Exception, E:
-        self.lastErrorMsg = str(E)
-        info = sys.exc_info()        
-        excNfo = traceback.extract_tb(info[2],1)
-        items = excNfo[0]
-        self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])
-        if(self.logger != None):
-          self.logger.error(self.lastErrorMsg)
-        else:
-          print(self.lastErrorMsg)
-        
-        return(False)
-      return(True)
   def writeLatLonCSVFile(self,outputFile,units='inches', minLatLong=None, maxLatLong=None,newCellSize=None,interpolate=False):
     if( self.readFileHeader() ):
       try:
@@ -555,7 +435,15 @@ class xmrgFile:
           self.logger.error(self.lastErrorMsg)
         else:
           print( str(E) )
-           
+
+  """
+  Function: hrapCoordToLatLong
+  Purpose: Converts the HRAP grid point given in hrapPoint into a latitude and longitude.
+  Parameters:  
+    hrapPoint is an hrapPoint object that defines the row,col point we are converting.
+  Returns:
+    A LatLong() object with the converted data.
+  """
   def hrapCoordToLatLong(self, hrapPoint ):
     latLong     = LatLong()
         
@@ -583,6 +471,16 @@ class xmrgFile:
     
     return( latLong )
 
+  """
+  Function: latLongToHRAP
+  Purpose: Converts a latitude and longitude into an HRAP grid point.
+  Parameters:  
+    latLong is an latLong object that defines the point we are converting.
+    roundToNearest specifies if we want to round the hrap point to the nearest integer value.
+    adjustToOrigin specifies if we want to adjust the hrap point to the origin of the file.
+  Returns:
+    A LatLong() object with the converted data.
+  """
   def latLongToHRAP(self, latLong, roundToNearest=False, adjustToOrigin=False):
     flat = math.radians( latLong.latitude )
     flon = math.radians( abs(latLong.longitude) + 180.0 - self.startLong )
@@ -729,14 +627,70 @@ class xmrgFile:
     z = b1 + (b2*x) + (b3*y) + (b4*x*y)
 
     return(z)
+  
+class configSettings(xmlConfigFile):
+  def __init__(self, xmlConfigFilename):
+    try:
+      #Call parents __init__
+      xmlConfigFile.__init__(self, xmlConfigFilename)
+      
+      #Log file settings
+      self.logFile = self.getEntry('//logging/logDir')
+      self.maxBytes = self.getEntry('//logging/maxBytes')
+      if(self.maxBytes == None):
+        self.maxBytes = 100000
+      else:
+        self.maxBytes = int(self.maxBytes)
+        
+      self.backupCount = self.getEntry('//logging/backupCount')
+      if(self.backupCount == None):
+        self.backupCount = 5
+      else:
+        self.backupCount = int(self.backupCount)
 
+      self.dbSettings = self.getDatabaseSettings()
+      self.spatiaLiteLib = self.getEntry('//database/db/spatiaLiteLib')
+
+      self.baseURL = self.getEntry('//xmrgData/baseURL')
+      #This tag is used to help further refine the files we process. For instance, hourly xmrg files are prepended
+      #with xmrg whereas the 6hr and 24hr files aren't. So we could use this to ignore those.
+      self.fileNameFilter = self.getEntry('//xmrgData/fileNameFilter')   
+      self.xmrgDLDir = self.getEntry('//xmrgData/downloadDir')
+
+      bbox = self.getEntry('//xmrgData/dbSettings/bbox')
+      self.minLL = None
+      self.maxLL = None
+      if(bbox != None):
+        latLongs = bbox.split(';')
+        self.minLL = LatLong()
+        self.maxLL = LatLong()
+        latlon = latLongs[0].split(',')
+        self.minLL.latitude = float( latlon[0] )
+        self.minLL.longitude = float( latlon[1] )
+        latlon = latLongs[1].split(',')
+        self.maxLL.latitude = float( latlon[0] )
+        self.maxLL.longitude = float( latlon[1] )
+
+      #Delete data that is older than the LastNDays
+      self.xmrgKeepLastNDays = self.getEntry('//xmrgData/dbSettings/keepLastNDays')
+      if(self.xmrgKeepLastNDays != None):
+        self.xmrgKeepLastNDays = int(self.xmrgKeepLastNDays)
+      #Try to fill in any holes in the data going back N days.
+      self.backfillLastNDays = self.getEntry('//xmrgData/dbSettings/backfillLastNDays')
+      if(self.backfillLastNDays != None):
+        self.backfillLastNDays = int(self.backfillLastNDays)
+      
+    except Exception, e:
+      print('ERROR: ' + str(e) + ' Terminating script')
+      sys.exit(- 1)
+#########################################################################################
 class processXMRGData(object):
   
   def __init__(self, xmlConfigFile):
     try:
       self.loggerName = 'dhec_logger'
   
-      self.configSettings = dhecConfigSettings( xmlConfigFile )
+      self.configSettings = configSettings( xmlConfigFile )
       
       #Create our logging object.
       if(self.configSettings.logFile == None):
@@ -797,6 +751,14 @@ class processXMRGData(object):
     if( self.logger != None ):
       logging.shutdown()
     
+  """
+  Function: buildXMRGFilename
+  Purpose: Given the desiredDateTime, creates an XMRG filename for that date/time period.
+  Parameters:
+    desiredDateTime is the desired data and time for the xmrg file we want to download.
+  Returns:
+    A string containing the xmrg filename.
+  """    
   def buildXMRGFilename(self, desiredDateTime):
     desiredTime=time.strptime(desiredDateTime, "%Y-%m-%dT%H:00:00")
     #Internally we stores date/times as localtime, however the xmrg remote files are stamped as UTC
@@ -810,98 +772,69 @@ class processXMRGData(object):
     date = time.strftime( "%m%d%Y", desiredTime)
     fileName = 'xmrg%s%sz.gz' % ( date,hour )
     return(fileName)
-    
+  
+  """
+  Function: getXMRGFile
+  Purpose: Attempts to download the file name given in fileName.
+  Parameters: 
+    fileName is the name of the xmrg file we are trying to download.
+  Returns:
+  
+  """
   def getXMRGFile(self, fileName):
     return(self.remoteFileDL.getFile( fileName, None, False))
-      
-  def getLatestHourXMRGData(self,writeToDB=True,writeCSVFile=False,writeASCIIGrid=False):
-    
+
+  """
+  Function: getLatestHourXMRGData
+  Purpose: Attempts to download the current hours XMRG file.
+  Parameters: None
+  Returns: 
+    True if successful, otherwise False.
+  """
+  def getLatestHourXMRGData(self):    
     try: 
       self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True)
-      
-      #Clean out any data older than 24 hours.
-      db = dhecDB(self.configSettings.dbSettings['dbName'], self.loggerName)
-      #Current time minus N days worth of seconds.
-      timeNHoursAgo = time.time() - ( self.configSettings.xmrgKeepLastNDays * 24 * 60 * 60 ) 
-      currentDateTime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime(timeNHoursAgo))
-      db.cleanPrecipRadar(currentDateTime)
-      
-      dateList=[]
+            
       #The latest completed hour will be current hour - 1.
       hr = time.time()-3600
       latestHour = time.strftime( "%Y-%m-%dT%H:00:00", time.localtime(hr))
-      #add it to our list to process
-      dateList.append(latestHour)
       
-      #Are we going to try to backfill any gaps in the data?
-      if(self.configSettings.backfillLastNDays):
-        baseTime = time.time()-3600
-        #Now let's build a list of the last N hours of data we should have to see if we have any holes
-        #to fill.
-        lastNHours = self.configSettings.backfillLastNDays * 24
-        for x in range(lastNHours):
-          datetime = time.strftime("%Y-%m-%dT%H:00:00", time.localtime(baseTime - ((x+1) * 3600)))          
-          dateList.append(datetime)
-        sql = "SELECT DISTINCT(collection_date) as date FROM precipitation_radar ORDER BY collection_date DESC;"
-        dbCursor = db.executeQuery(sql)
-        if(dbCursor != None):
-          #Now we'll loop through and pull any date from the datebase that matches a date in our list
-          #from the list. This gives us our gaps.
-          for row in dbCursor:
-            dbDate = row['date'] 
-            for x in range(len(dateList)):
-              if(dbDate == dateList[x]):
-                dateList.pop(x)
-                break          
-      db.dbCon.close()
-      
-      for date in dateList:
-        fileName = self.buildXMRGFilename(date)
-        #Now we try to download the file.
-        fileName = self.getXMRGFile(fileName)
-        if( fileName != None ):
-          self.logger.info( "Processing XMRG File: %s" %(fileName))
-          xmrg = xmrgFile( self.loggerName )
-          xmrg.openFile( fileName, 0 )
-              
-          minLL = LatLong(31.53,-83.3)
-          maxLL = LatLong(36.39, -74.1)
-          if( minLL != None and maxLL != None ):
-            self.logger.debug( "Using BBOX. LL-Latitude %f LL-Longitude: %f UR-Latitude: %f UR-Longitude: %f" %(minLL.latitude,minLL.longitude,maxLL.latitude,maxLL.longitude))
-          if( writeToDB ):
-            xmrg.writeLatLonDB( self.configSettings.dbSettings['dbName'], minLL, maxLL )
-            #Test the spatialite lib.
-            #db = dhecDB(self.dbPath, self.loggerName)
-            #db.loadSpatiaLiteLib( self.spatiaLiteLib )     
-            #sql = 'SELECT latitude,longitude,precipitation FROM precipitation_radar \
-            #        WHERE Contains( GeomFromText( \'POLYGON((-79.238743 33.592447, -78.994153 33.747115, -78.882832 33.554469, -79.104116 33.454099, -79.238743 33.592447))\'), GeomFromText(wkt_geometry) )'
-            #cursor = db.executeQuery( sql )
-            #if( cursor != None ):
-            #  outFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\spatialitetext.csv", "wt")  
-            #  for row in cursor:
-            #    outFile.write( '%f,%f,%f\n' %( row['latitude'],row['longitude'],row['precipitation']) )
-            #  outFile.close()
-              
-          if( writeCSVFile ):
-            destFile = options.xmrgFile
-            if( ndx != -1 ):
-              destFile = parts[0] + '-latlon.csv'
-            else:
-              destFile += '-latlon.csv'        
-            xmrg.Reset()
-            xmrg.openFile( options.xmrgFile, 0 )
-            xmrg.writeLatLonCSVFile( destFile, True, 'inches', minLL, maxLL )
-            
-          if( writeASCIIGrid ):
-            destFile = options.xmrgFile
-            if( ndx != -1 ):
-              destFile = parts[0] + '-grid.txt'
-            else:
-              destFile += '-grid.txt'        
-            xmrg.Reset()
-            xmrg.openFile( options.xmrgFile, 0 )
-        else:
-          self.logger.error( "Unable to download file: %s" %(fileName))
+      fileName = self.buildXMRGFilename(latestHour)
+      #Now we try to download the file.
+      fileName = self.getXMRGFile(fileName)
+      if( fileName != None ):
+        self.logger.info( "Processing XMRG File: %s" %(fileName))
+        xmrg = xmrgFile( self.loggerName )
+        xmrg.openFile( fileName )
+        return( self.processXMRGFile( xmrg ) )
+        """    
+        if( self.configSettings.minLL != None and 
+            self.configSettings.maxLL != None ):
+          self.logger.debug( "Using BBOX. LL-Latitude %f LL-Longitude: %f UR-Latitude: %f UR-Longitude: %f"\
+                              %(self.configSettings.minLL.latitude,self.configSettings.minLL.longitude,self.configSettings.maxLL.latitude,self.configSettings.maxLL.longitude))
+        if( writeToDB ):
+          self.writeLatLonDB( xmrg, self.configSettings.dbSettings['dbName'], self.configSettings.minLL, self.configSettings.maxLL )              
+        if( writeCSVFile ):
+          destFile = options.xmrgFile
+          if( ndx != -1 ):
+            destFile = parts[0] + '-latlon.csv'
+          else:
+            destFile += '-latlon.csv'        
+          xmrg.Reset()
+          xmrg.openFile( options.xmrgFile, 0 )
+          xmrg.writeLatLonCSVFile( destFile, True, 'inches', minLL, maxLL )
+          
+        if( writeASCIIGrid ):
+          destFile = options.xmrgFile
+          if( ndx != -1 ):
+            destFile = parts[0] + '-grid.txt'
+          else:
+            destFile += '-grid.txt'        
+          xmrg.Reset()
+          xmrg.openFile( options.xmrgFile, 0 )
+        """
+      else:
+        self.logger.error( "Unable to download file: %s" %(fileName))
           
     except Exception, E:
       self.lastErrorMsg = str(E) 
@@ -910,7 +843,18 @@ class processXMRGData(object):
       items = excNfo[0]
       self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])      
       self.logger.error( self.lastErrorMsg )
-    return(None)
+    return(False)
+  
+  """
+  Function: processXMRGFile
+  Purpose: Override this function to do whatever specific processing/saving that needs to be done to the file.
+  Parameters:
+    xmrgFile is the open xmrgFile object to be processed.
+  Returns:
+    True if succesful, otherwise False.
+  """
+  def processXMRGFile(self,xmrgFile):
+    return(False)
   
 if __name__ == '__main__':   
   try:
@@ -923,7 +867,7 @@ if __name__ == '__main__':
       parser.print_help()
       sys.exit(-1)
     xmrgData = processXMRGData(options.xmlConfigFile)
-    xmrgData.getLatestHourXMRGData(True)
+    xmrgData.getLatestHourXMRGData()
   except Exception, E:
     info = sys.exc_info()        
     excNfo = traceback.extract_tb(info[2],1)
