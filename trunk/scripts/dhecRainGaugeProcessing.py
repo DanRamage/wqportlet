@@ -162,24 +162,6 @@ class dhecDB(xeniaSQLite):
     if(xeniaSQLite.connect(self, dbName) == False):
       self.logger.error(self.db.lastErrorMsg)
       sys.exit(- 1)
-    """
-    try:
-      self.dbCon = sqlite3.connect( dbName )
-      #This enables the ability to manipulate rows with the column name instead of an index.
-      self.dbCon.row_factory = sqlite3.Row
-    except sqlite3.Error, e:
-      if( self.logger != None ):
-        self.logger.critical( e.args[0] + ' Terminating script.' )
-      else:
-        print( e.args[0] )
-      sys.exit(-1)
-    except Exception, e:
-      if( self.logger != None ):
-        self.logger.critical( str(e) + ' Terminating script.' )
-      else:
-        print( str(e) )
-      sys.exit(-1)
-     """
   def __del__(self):
     self.DB.close()
   
@@ -282,34 +264,6 @@ class dhecDB(xeniaSQLite):
       self.logger.error( "%s Function: %s Line: %s File: %s" %(self.DB.lastErrorMsg,self.DB.lastErrorFunc, self.DB.lastErrorLineNo, self.DB.lastErrorFile) )
       
     return(True)  
-    """
-    sql = "INSERT INTO precipitation  \
-          (date,rain_gauge,batt_voltage,program_code,rainfall ) \
-          VALUES( '%s','%s',%3.2f,%.2f,%2.4f);" % (datetime,rain_gauge,batt_voltage,program_code,rainfall)
-    try:
-      dbCursor = self.db.cursor()
-      dbCursor.execute( sql )
-      self.totalRowsProcd += 1
-      return(True)
-    
-    #Duplicate data. 
-    except sqlite3.IntegrityError, e:
-      self.rowErrorCnt += 1
-      if( self.logger != None ):
-        self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-      else:
-        print( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-      
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if( self.logger != None ):      
-        self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
-      else:
-        print( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-      sys.exit(-1)
-      
-    return(False)         
-    """
   """
   Function: write24HourSummary
   Purpose: Writes an entry into the precip_daily_summary table. This is the days summary for the rain gauge.
@@ -343,33 +297,6 @@ class dhecDB(xeniaSQLite):
           return(False)
 
     
-    """
-    sql = "INSERT INTO precip_daily_summary  \
-          (date,rain_gauge,rainfall ) \
-          VALUES( '%s','%s',%2.4f );" % (datetime,rain_gauge,rainfall)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute( sql )
-      self.totalRowsProcd += 1
-      return(True)
-
-    #Duplicate data. 
-    except sqlite3.IntegrityError, e:
-      self.rowErrorCnt += 1
-      if( self.logger != None ):
-        self.logger.error( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-      else:
-        print( "ErrMsg: %s SQL: \"%s\"" % (e.args[0], sql) )
-
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if( self.logger != None ):      
-        self.logger.critical( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
-      else:
-        print( "ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql) )
-      sys.exit(-1)
-    return(False)
-    """
   """
   Function: getInspectionDates
   Purpose: Queries the dhec_beach table and returns the dates of the inspections for the given
@@ -596,31 +523,6 @@ class dhecDB(xeniaSQLite):
         print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
     return(- 1.0)
   """
-  def getLastNHoursSummaryEpoch(self, datetime, rain_gauge, prevHourCnt):
-    epochtime = int(time.mktime(time.strptime(datetime, '%Y-%m-%dT%H:%M:00')))  
-    endtime = epochtime - (prevHourCnt * 60 * 60)
-    sql = "SELECT SUM(rainfall) \
-           FROM precipitation \
-           WHERE\
-             rain_gauge = '%s' AND \
-             epoch_time <= %d AND \
-             epoch_time >= %d" % (rain_gauge, epochtime, endtime)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      sum = dbCursor.fetchone()[0]
-      if(sum != None):
-        return(float(sum))      
-    
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-    return(- 1.0)
-  """
-  """
   Function: getPrecedingDryDaysCount
   Purpose: For the given date, this function calculates how many days previous had no rainfall, if any.
   Parameters: 
@@ -630,46 +532,39 @@ class dhecDB(xeniaSQLite):
   def getPrecedingDryDaysCount(self, datetime, rainGauge):
     iDryCnt = 0
     secondsInDay = 24 * 60 * 60
-    sql = "Select A.date, A.ndx,  A.rainfall, \
-            Case \
-              When A.rainfall = 0  Then \
-                IFNULL( (Select Max(B.ndx) From precip_daily_summary As B WHERE B.ndx < A.ndx AND B.rainfall=0   ), \
-                (A.ndx) ) \
-              End As grp \
-          From precip_daily_summary As A WHERE rain_gauge = '%s' AND date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s', '-2 day') ) ORDER BY datetime(date) DESC" % \
-          (rainGauge, datetime)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)    
+    platformHandle = "dhec.%s.raingauge" %(rainGauge)
+    mTypeID = xeniaSQLite.getMTypeFromObsName(self,"precipitation_accumulated_daily","in",platformHandle,1)
+    sql = "Select A.m_date, A.row_id,  A.m_value, "\
+          "Case "\
+          "When A.m_value= 0  Then "\
+              "IFNULL( (Select Max(B.row_id) From multi_obs As B WHERE B.row_id < A.row_id AND B.m_value=0   ), "\
+                       "(A.row_id) ) "\
+                         "End As grp "\
+          "FROM multi_obs As A WHERE "\
+          "m_date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s', '-2 day') ) AND "\
+          "m_type_id = %d AND "\
+          "platform_handle = '%s' "\
+          "ORDER BY datetime(m_date) DESC;"\
+          %(datetime,mTypeID,platformHandle)          
+    dbCursor = xeniaSQLite.executeQuery(self,sql)
+    if(dbCursor != None):    
       #We subtract off a day since when we are looking for the summaries we start on -1 day from the date provided.
       t1 = time.mktime(time.strptime(datetime, '%Y-%m-%dT%H:%M:00')) - secondsInDay
       for row in dbCursor:
         if(row['grp'] != None):
-          t2 = time.mktime(time.strptime(row['date'], '%Y-%m-%dT%H:%M:00'))         
+          t2 = time.mktime(time.strptime(row['m_date'], '%Y-%m-%dT%H:%M:00'))         
           #We have to make sure the data points are 1 day apart, according the thesis if we are missing
           #a data point, we don't calculate the preceding dry days.
           if((t1 - t2) <= secondsInDay):
             iDryCnt += 1
             t1 = t2
           else:
-            iDryCnt = - 1
+            iDryCnt = -1
             break
         else:
           break
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-      iDryCnt = - 1
-    except TypeError, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s" % (str(e)))
-      else:
-        print("ErrMsg: %s" % (str(e)))      
-      iDryCnt = - 1
+    else:
+      iDryCnt = -1
     return(iDryCnt)
   """
   Function: calcRainfallIntensity
@@ -683,26 +578,25 @@ class dhecDB(xeniaSQLite):
     minutes is the number of minutes we want to collect rainfall for.
   """
   def calcRainfallIntensity(self, rainGauge, date, minutes):
-    rainfallIntensity = - 1
-    try:
-      platformHandle = 'dhec.%s.raingauge' % (rainGauge)
-      mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation', 'in',platformHandle,1)
-      
-      #Get the entries where there was rainfall for the date, going forward the minutes number of minutes. 
-      sql = "SELECT m_value from multi_obs \
-              WHERE \
-              m_date >= strftime('%%Y-%%m-%%d', datetime('%s','-1 day') ) AND m_date < strftime('%%Y-%%m-%%d', datetime('%s') ) AND\
-              m_type_id = %d AND\
-              platform_handle = '%s';"\
-              % (date, date, mTypeID, platformHandle)
-      """              
-      sql = "SELECT rainfall from precipitation \
-              WHERE rain_gauge = '%s' AND \
-              date >= strftime('%%Y-%%m-%%d', datetime('%s','-1 day') ) AND date < strftime('%%Y-%%m-%%d', datetime('%s') );" \     
-     % (rainGauge, date, date)
-     """
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
+    rainfallIntensity = -1
+    platformHandle = 'dhec.%s.raingauge' % (rainGauge)
+    mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation', 'in',platformHandle,1)
+    
+    #Get the entries where there was rainfall for the date, going forward the minutes number of minutes. 
+    sql = "SELECT m_value from multi_obs \
+            WHERE \
+            m_date >= strftime('%%Y-%%m-%%d', datetime('%s','-1 day') ) AND m_date < strftime('%%Y-%%m-%%d', datetime('%s') ) AND\
+            m_type_id = %d AND\
+            platform_handle = '%s';"\
+            % (date, date, mTypeID, platformHandle)
+    """              
+    sql = "SELECT rainfall from precipitation \
+            WHERE rain_gauge = '%s' AND \
+            date >= strftime('%%Y-%%m-%%d', datetime('%s','-1 day') ) AND date < strftime('%%Y-%%m-%%d', datetime('%s') );" \     
+   % (rainGauge, date, date)
+   """
+    dbCursor =  xeniaSQLite.executeQuery(sql)
+    if(dbCursor != None):
       totalRainfall = 0
       numRainEntries = 0    
       hasData = False  
@@ -720,14 +614,8 @@ class dhecDB(xeniaSQLite):
           
       if(numRainEntries):  
         rainfallIntensity = totalRainfall / (numRainEntries * 10)
-        
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-      
+    else:    
+      self.logger.error("%s Function: %s Line: %s File: %s" % (self.lastErrorMsg,self.lastErrorFunc, self.lastErrorLineNo, self.LastErrorFile))            
     return(rainfallIntensity)
   
   def getTideLevel(self, tideStationID, date):
@@ -864,7 +752,35 @@ class dhecDB(xeniaSQLite):
           print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
         
     return(False)  
+  """
+  """
+  def createWatershedBoundaryTable(self, shpfilePath):
+    #Clean the extension from the filepath. The docs for VirtualShape specifically spell out not to
+    #use the suffix.
+    shpfile = shpfilePath.replace(".shp", "")
+    sql = "CREATE VIRTUAL TABLE boundaries USING VirtualShape('%s', CP1252, 4326);" %(shpfile)
+    dbCursor = xeniaSQLite.executeQuery(self,sql)
+    if(dbCursor != None):
+      return(True)
+    return(False)
   
+  def dropWatershedBoundaryTable(self):
+    sql = "DROP TABLE boundaries"
+    xeniaSQLite.executeQuery(self,sql)
+    return
+  
+  """
+  Function: getRadarDataForBoundary
+  Purpose: For the given rain gauge(boundaryName), this function will return the radar data that is in that POLYGON.
+  """
+  def getRadarDataForBoundary(self, boundaryName,dateTime):
+    sql = "SELECT latitude,longitude,precipitation FROM precipitation_radar \
+            WHERE\
+            collection_date='%s' AND\
+            Intersects( GeomFromText(wkt_geometry), \
+                        GeomFromText((SELECT AsText(Geometry) FROM boundaries WHERE AOI ='%s')))"\
+            %(dateTime,boundaryName)
+    return(xeniaSQLite.executeQuery(self,sql))
 ################################################################################################################  
 class dhecConfigSettings(xmlConfigFile):
   def __init__(self, xmlConfigFilename):
@@ -911,19 +827,6 @@ class dhecConfigSettings(xmlConfigFile):
       self.kmlFilePath = self.getEntry('//rainGaugeProcessing/outputs/kml/filePath')    
   
       self.spatiaLiteLib = self.getEntry('//database/db/spatiaLiteLib')
-      self.baseURL = self.getEntry('//xmrgData/baseURL')
-      #This tag is used to help further refine the files we process. For instance, hourly xmrg files are prepended
-      #with xmrg whereas the 6hr and 24hr files aren't. So we could use this to ignore those.
-      self.fileNameFilter = self.getEntry('//xmrgData/fileNameFilter')   
-      self.xmrgDLDir = self.getEntry('//xmrgData/downloadDir')
-      #Delete data that is older than the LastNDays
-      self.xmrgKeepLastNDays = self.getEntry('//xmrgData/dbSettings/keepLastNDays')
-      if(self.xmrgKeepLastNDays != None):
-        self.xmrgKeepLastNDays = int(self.xmrgKeepLastNDays)
-      #Try to fill in any holes in the data going back N days.
-      self.backfillLastNDays = self.getEntry('//xmrgData/dbSettings/backfillLastNDays')
-      if(self.backfillLastNDays != None):
-        self.backfillLastNDays = int(self.backfillLastNDays)
     except Exception, e:
       print('ERROR: ' + str(e) + ' Terminating script')
       sys.exit(- 1)
@@ -1356,13 +1259,14 @@ class processDHECRainGauges:
             else:
               last48 = ('%4.2f inches') % (last48) 
             curTime = curTime.replace("T", " ")
+            platformDesc = row['description']
             desc = "<table><tr>Location: %s</tr>\
                     <tr><ul>\
                     <li>Date/Time: %s</li>\
                     <li>Last Hour: %s</li>\
                     <li>Last 24 Hours: %s</li>\
                     <li>Last 48 Hours: %s</li></ul></table>"\
- % (row['description'], curTime, last1, last24, last48)
+                    % (row['description'], curTime, last1, last24, last48)
             pm = rainGaugeKML.createPlacemark(row['short_name'], row['fixed_latitude'], row['fixed_longitude'], desc)
             doc.appendChild(pm)
         rainGaugeKML.root.appendChild(doc)  
@@ -1380,7 +1284,6 @@ class processDHECRainGauges:
   Purpose: Rollover precipitation data in the live database older than 30 days into the backup database.
   """    
   def backupData(self):
-    self.logger.info("-----------------------------------------------------------------------")  
     self.logger.info("Beginning data backup/rollover.")
     
     curYear = time.strftime('%Y', time.localtime())
@@ -1405,25 +1308,74 @@ class processDHECRainGauges:
     ################################################################################
     #On a platform by platform basis, get all data that is not in the current month.    
     dbCursor = self.db.getRainGauges()
-    #Cutoff date, we want to keep last 30 days.  
-    
-    cutoffDate = time.strftime("%Y-%m-%dT00:00:00", time.localtime(time.time() - (30 * 24 * 60 * 60)))
     gaugeList = []
     for row in dbCursor:    
-      gaugeList.append(row['name'])
+      gaugeList.append(row['platform_handle'])
     dbCursor.close()
-    for rainGauge in gaugeList:
-      self.logger.info("Processing precipitation table data for rain gauge: %s" % (rainGauge))
-      sql = "SELECT * FROM precipitation WHERE date < '%s' AND rain_gauge='%s'" % (cutoffDate, rainGauge) 
+    #Cutoff date, we want to keep last 30 days.      
+    cutoffDate = time.strftime("%Y-%m-%dT00:00:00", time.localtime(time.time() - (30 * 24 * 60 * 60)))
+    for platformHandle in gaugeList:
+      #Get the m_types for the sensors we will roll over into the backup database.
+      #(self, obsName, uom, platform, sOrder=1 ):
+      mTypeList = '('
+      precipMType = self.db.getMTypeFromObsName( "precipitation", "in", platformHandle, 1)
+      mTypeList += "m_type_id=%d "%(precipMType)
+      precipDailySum = self.db.getMTypeFromObsName( "precipitation_accumulated_daily", "in", platformHandle, 1)
+      if(precipDailySum != None):
+        mTypeList += "OR m_type_id=%d "%(precipDailySum)       
+      windSpd = self.db.getMTypeFromObsName( "wind_speed", "mph", platformHandle, 1)
+      if(windSpd != None):
+        mTypeList += "OR m_type_id=%d "%(windSpd)
+      windDir = self.db.getMTypeFromObsName( "wind_from_direction", "degrees_true", platformHandle, 1)
+      if(windDir != None):
+        mTypeList += "OR m_type_id=%d"%(windDir)
+      
+      if( len(mTypeList) <= 0 ):
+        self.logger.error("No m_type_ids found for platform: %s" % (platformHandle))
+        return
+      else:
+        mTypeList += ") AND "
+      self.logger.info("Processing multi_obs table data for platform: %s" % (platformHandle))
+      sql = "SELECT * FROM multi_obs\
+             WHERE\
+             m_date < '%s' AND\
+             %s\
+             platform_handle='%s' ORDER BY m_date ASC"\
+             %(cutoffDate, mTypeList, platformHandle) 
       resultsCursor = self.db.executeQuery(sql)
       rowCnt = 0
       if(resultsCursor != None):
         for item in resultsCursor:
-          backupDB.writePrecip(item['date'],
-                                item['rain_gauge'],
-                                item['batt_voltage'],
-                                item['program_code'],
-                                item['rainfall'])   
+          obsName = ''
+          uom = ''
+          mVals = []
+          mVals.append(float(item['m_value']))
+          if( int(item['m_type_id']) == precipMType ):
+            obsName = 'precipitation'
+            uom = 'in'
+            mVals.append(float(item['m_value_2']))
+            mVals.append(float(item['m_value_3']))
+          elif( int(item['m_type_id']) == precipDailySum ):
+            obsName = 'precipitation_accumulated_daily'
+            uom = 'in'
+          elif( int(item['m_type_id']) == windSpd ):
+            obsName = 'wind_speed'
+            uom = 'mph'
+          elif( int(item['m_type_id']) == windDir ): 
+            obsName = 'wind_from_direction'
+            uom = 'degrees_true'
+          if(backupDB.addMeasurement(obsName, uom,
+                                     platformHandle,
+                                     item['m_date'],
+                                     item['m_lat'], item['m_lon'],
+                                     0,
+                                     mVals,
+                                     1,
+                                     False) != True):
+            self.logger.critical( "%s Function: %s Line: %s File: %s"\
+                               %(backupDB.lastErrorMsg,backupDB.lastErrorFunc, backupDB.lastErrorLineNo, backupDB.lastErrorFile) )
+            return
+          
           rowCnt += 1               
         if(not backupDB.commit()):
           self.logger.error(backupDB.lastErrorMsg)
@@ -1433,7 +1385,7 @@ class processDHECRainGauges:
         
         #Now we delete the records from the source DB.
         self.logger.info("Deleting backed up records from source database.")
-        sql = "DELETE FROM precipitation WHERE date < '%s' and rain_gauge='%s'" % (cutoffDate, rainGauge)
+        sql = "DELETE FROM multi_obs WHERE m_date < '%s' and platform_handle='%s'" % (cutoffDate, platformHandle)
         resultsCursor = self.db.executeQuery(sql)
         if(resultsCursor != None):
           if(not self.db.commit()):
@@ -1444,40 +1396,7 @@ class processDHECRainGauges:
           sys.exit(- 1)
         resultsCursor.close()
         
-      self.logger.info("Processing precip_daily_summary table data for rain gauge: %s" % (rainGauge))
-      rowCnt = 0
-      sql = "SELECT * FROM precip_daily_summary WHERE date < '%s' AND rain_gauge='%s'" % (cutoffDate, rainGauge) 
-      resultsCursor = self.db.executeQuery(sql)
-      if(resultsCursor != None):
-        for item in resultsCursor:
-          backupDB.write24HourSummary(item['date'],
-                                        item['rain_gauge'],
-                                        item['rainfall'])     
-          rowCnt += 1               
-               
-        if(not backupDB.commit()):
-          self.logger.error(backupDB.lastErrorMsg)
-          sys.exit(- 1)
-        self.logger.info("Successfully processed and committed: %d rows into backup." % (rowCnt))
-        resultsCursor.close()
-        
-        #Now we delete the records from the source DB.
-        self.logger.info("Deleting backed up records from source database.")
-        sql = "DELETE FROM precip_daily_summary WHERE date < '%s' and rain_gauge='%s'" % (cutoffDate, rainGauge)
-        resultsCursor = self.db.executeQuery(sql)
-        if(resultsCursor != None):
-          if(not self.db.commit()):
-            self.logger.debug(self.db.lastErrorMsg)
-            sys.exit(- 1)
-          resultsCursor.close()
-        else:
-          self.logger.error(self.db.lastErrorMsg)
-          sys.exit(- 1)
-      else:
-        self.logger.error(self.db.lastErrorMsg)
-        sys.exit(- 1)
     self.logger.info("Finished data backup/rollover.")
-    self.logger.info("-----------------------------------------------------------------------")  
 
   def checkForPlatformAndSensor(self, orgInfo, platformInfo, sensorList, addUOMandSensor=False):
     try:
@@ -1646,7 +1565,19 @@ if __name__ == '__main__':
 
 
   dhecData = processDHECRainGauges(sys.argv[1])
-  convertSensorsToXeniaDB(dhecData, False, True)
+  dhecData.db.loadSpatiaLiteLib("C:\\Program Files\\sqlite-3_5_6\\libspatialite-1.dll")
+  dhecData.db.createWatershedBoundaryTable( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\shapefiles\\HUCs_AOI")
+  dbCursor = dhecData.db.getRadarDataForBoundary( 'nmb1', '2009-09-03T14:00:00')
+  if(dbCursor != None):
+    outFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\spatialitetext.csv", "wt")  
+    outFile.write( 'latitude,longitude,precip\n' )
+    for row in dbCursor:
+      outFile.write( '%f,%f,%f\n' %( row['latitude'],row['longitude'],row['precipitation']) )
+    outFile.close()
+    
+  dhecData.db.dropWatershedBoundaryTable()
+  
+  #convertSensorsToXeniaDB(dhecData, False, True)
   #dhecData.processFiles()
   #Create KML file for obs.
   

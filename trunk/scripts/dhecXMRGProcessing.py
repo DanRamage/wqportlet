@@ -1,8 +1,9 @@
 import sys
+import os
 import traceback
 import optparse
 import time
-sys.path.insert(0, "C:\\Documents and Settings\\dramage\\workspace\\BeachAdvisory") 
+#sys.path.insert(0, "C:\\Documents and Settings\\dramage\\workspace\\BeachAdvisory") 
 from xmrgFile import xmrgFile,processXMRGData,hrapCoord,LatLong
 from dhecRainGaugeProcessing import dhecDB
 from xeniatools import getRemoteFiles
@@ -15,14 +16,6 @@ class dhecXMRGProcessing(processXMRGData):
     processXMRGData.__init__(self,xmlConfigFile)
 
     
-
-  def processXMRGFile(self,xmrgFile):
-    if( self.configSettings.minLL != None and 
-        self.configSettings.maxLL != None ):
-      self.logger.debug( "Using BBOX. LL-Latitude %f LL-Longitude: %f UR-Latitude: %f UR-Longitude: %f"\
-                          %(self.configSettings.minLL.latitude,self.configSettings.minLL.longitude,self.configSettings.maxLL.latitude,self.configSettings.maxLL.longitude))
-
-    self.writeLatLonDB( xmrgFile, self.configSettings.dbSettings['dbName'], self.configSettings.minLL, self.configSettings.maxLL )              
 
   def getLatestHourXMRGData(self,writeToDB=True,writeCSVFile=False,writeASCIIGrid=False):    
     try: 
@@ -71,7 +64,7 @@ class dhecXMRGProcessing(processXMRGData):
         if( fileName != None ):
           self.logger.info( "Processing XMRG File: %s" %(fileName))
           xmrg = xmrgFile( self.loggerName )
-          xmrg.openFile( fileName, 0 )
+          xmrg.openFile( fileName )
           self.processXMRGFile( xmrg )
         else:
           self.logger.error( "Unable to download file: %s" %(fileName))
@@ -84,6 +77,14 @@ class dhecXMRGProcessing(processXMRGData):
       self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])      
       self.logger.error( self.lastErrorMsg )
     return(None)
+
+  def processXMRGFile(self,xmrgFile):
+    if( self.configSettings.minLL != None and 
+        self.configSettings.maxLL != None ):
+      self.logger.debug( "Using BBOX. LL-Latitude %f LL-Longitude: %f UR-Latitude: %f UR-Longitude: %f"\
+                          %(self.configSettings.minLL.latitude,self.configSettings.minLL.longitude,self.configSettings.maxLL.latitude,self.configSettings.maxLL.longitude))
+
+    return( self.writeLatLonDB( xmrgFile, self.configSettings.dbSettings['dbName'], self.configSettings.minLL, self.configSettings.maxLL ) )              
 
   def writeLatLonDB(self, xmrgFile, dbFile, minLatLong=None, maxLatLong=None,newCellSize=None,interpolate=False):
 
