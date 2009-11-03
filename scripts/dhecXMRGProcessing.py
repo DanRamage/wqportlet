@@ -170,7 +170,7 @@ class dhecXMRGProcessing(processXMRGData):
                   latlonUR.longitude *= -1
                   wkt = "POLYGON((%f %f,%f %f,%f %f,%f %f,%f %f))"\
                         %(latlon.longitude, latlon.latitude,
-                          latlonUL.longitude, latlon.latitude, 
+                          latlonUL.longitude, latlonUL.latitude, 
                           latlonUR.longitude, latlonUR.latitude, 
                           latlonBR.longitude, latlonBR.latitude, 
                           latlon.longitude, latlon.latitude, 
