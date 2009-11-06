@@ -1,21 +1,20 @@
 import sys
 import optparse
 
-sys.path.append("C:\Documents and Settings\dramage\workspace\BeachAdvisory") 
-#print(sys.path)
+#sys.path.append("C:\Documents and Settings\dramage\workspace\BeachAdvisory") 
 from dhecRainGaugeProcessing import dhecDB
 from dhecRainGaugeProcessing import rainGaugeData
 from dhecRainGaugeProcessing import processDHECRainGauges 
 from dhecRainGaugeProcessing import dhecConfigSettings
-from xmrgFile import processXMRGData
+from dhecXMRGProcessing import dhecXMRGProcessing
 
 
 
 
 def getRainGaugeData(configFile):
   dhecData = processDHECRainGauges(configFile)
-  dhecData.deleteRainGaugeDataFiles()
-  dhecData.ftpRainGaugeData()
+  #dhecData.deleteRainGaugeDataFiles()
+  #dhecData.ftpRainGaugeData()
   dhecData.processFiles()
   #Check to make sure data flowed.
   #dhecData.checkDataFlow()
@@ -23,8 +22,8 @@ def getRainGaugeData(configFile):
   dhecData.writeKMLFile()
 
 def getXMRGData(configFile):
-  xmrgData = processXMRGData(configFile)
-  xmrgData.getLatestHourXMRGData(True)
+  xmrgData = dhecXMRGProcessing(configFile)
+  xmrgData.getLatestHourXMRGData()
   
 def vacuum(configFile):
   dhecData = processDHECRainGauges(configFile)
