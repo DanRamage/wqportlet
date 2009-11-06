@@ -84,6 +84,9 @@ class readRainGaugeData:
       elif(len(row) < 7):
         self.logger.error("Row: '%s' does not have enough columns to process on line: %d moving to next row" % (row, self.file.line_num))
         return(dataRow)
+      elif(len(row)>9):
+        self.logger.error("Row: '%s' has too many columns to process on line: %d moving to next row" % (row, self.file.line_num))
+        return(dataRow)        
       #1st entry is rain gauge ID
       if(len(row[0])):
           dataRow.ID = int(row[0])
@@ -222,8 +225,8 @@ class dhecDB(xeniaSQLite):
                                    mVals,
                                    1,
                                    False) != True):
-          self.logger.error( "%s Function: %s Line: %s File: %s"\
-                             %(self.lastErrorMsg,self.lastErrorFunc, self.lastErrorLineNo, self.lastErrorFile) )
+          self.logger.error( "%s"\
+                             %(self.getErrorInfo()) )
           xeniaSQLite.clearErrorInfo(self)
           return(False)
         
@@ -239,8 +242,8 @@ class dhecDB(xeniaSQLite):
                                      mVals,
                                      1,
                                      False) != True):           
-            self.logger.error( "%s Function: %s Line: %s File: %s"\
-                             %(self.lastErrorMsg,self.lastErrorFunc, self.lastErrorLineNo, self.lastErrorFile) )
+            self.logger.error( "%s"\
+                             %(self.getErrorInfo()) )
             xeniaSQLite.clearErrorInfo(self)
             return(False)
         if(windDir != None):    
@@ -254,14 +257,14 @@ class dhecDB(xeniaSQLite):
                                      mVals,
                                      1,
                                      False) != True):
-            self.logger.error( "%s Function: %s Line: %s File: %s"\
-                             %(self.lastErrorMsg,self.lastErrorFunc, self.lastErrorLineNo, self.lastErrorFile) )
+            self.logger.error( "%s"\
+                             %(self.getErrorInfo()) )
             xeniaSQLite.clearErrorInfo(self)
             return(False)
       else:
         self.logger.error( "Platform: %s not found. Cannot add measurement." %(platformHandle) )
     else:
-      self.logger.error( "%s Function: %s Line: %s File: %s" %(self.DB.lastErrorMsg,self.DB.lastErrorFunc, self.DB.lastErrorLineNo, self.DB.lastErrorFile) )
+      self.logger.error( "%s" %(self.getErrorInfo()) )
       
     return(True)  
   """
@@ -675,9 +678,9 @@ class dhecDB(xeniaSQLite):
   Function: getPlatforms
   Purpose: Returns the platforms(rain gauges, monitoring stations) from the platforms table
   """
-  def getPlatforms(self):
+  def getPlatforms(self,where=""):
     try:
-      sql = "SELECT * from platform"
+      sql = "SELECT * from platform %s;" %(where) 
       dbCursor = self.DB.cursor()
       dbCursor.execute(sql)
       return(dbCursor)
@@ -804,7 +807,10 @@ class dhecConfigSettings(xmlConfigFile):
       
       #DB settings
       self.dbSettings = self.getDatabaseSettings()
-      self.dbBackupFile = self.getEntry('//environment/database/db/backup/filePath')      
+      #This is the root file path where the rollover/backup database is to be created.
+      self.dbBackupFile = self.getEntry('//environment/database/db/backup/filePath')
+      #For non-existent db's, this is the path to the SQL statement that will create the schema.
+      self.dbBackupSQLSchemaFile= self.getEntry('//environment/database/db/backup/sqlSchemaFile')
       
       #Directory where to store rain gauge files.
       self.rainGaugeFileDir = self.getEntry('//rainGaugeProcessing/rainGaugeFileDir')
@@ -1297,12 +1303,23 @@ class processDHECRainGauges:
       if(not os.path.exists(filePath)):
         os.mkdir(filePath)
         self.logger.info("Directory: %s does not exist, creating." % (filePath))
-        
-      self.logger.info("File: %s does not exist, cannot continue." % (backupFilename))
-      return;
+      
+      if(self.configSettings.dbBackupSQLSchemaFile == None):  
+        self.logger.info("File: %s does not exist, cannot continue." % (backupFilename))
+        return;
+      #We've got a SQL file to create the schema with.
+      else:
+        backupDB = dhecDB(backupFilename, "dhec_logger")
+        backupDB.DB.close()
+        shellCmd = "sqlite3 \"%s\" < \"%s\""%(backupFilename,self.configSettings.dbBackupSQLSchemaFile)
+        ret = os.system(shellCmd)
+        self.logger.debug("Created database: %s with schema file: %s" %(backupFilename,self.configSettings.dbBackupSQLSchemaFile))
     else:
       backupDB = dhecDB(backupFilename, "dhec_logger")
       self.logger.info("Connecting to database: %s" % (backupFilename))
+
+    sys.exit(-1)
+
     ################################################################################
       
     ################################################################################
@@ -1563,7 +1580,7 @@ if __name__ == '__main__':
     print("Usage: xmrgFile.py xmlconfigfile")
     sys.exit(- 1)    
 
-
+  sys.exit(0)
   dhecData = processDHECRainGauges(sys.argv[1])
   dhecData.db.loadSpatiaLiteLib("C:\\Program Files\\sqlite-3_5_6\\libspatialite-1.dll")
   dhecData.db.createWatershedBoundaryTable( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\shapefiles\\HUCs_AOI")

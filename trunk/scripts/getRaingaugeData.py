@@ -15,6 +15,8 @@ if __name__ == '__main__':
   dhecData.deleteRainGaugeDataFiles()
   dhecData.ftpRainGaugeData()
   dhecData.processFiles()
+  #Check to make sure data flowed.
+  dhecData.checkDataFlow()
   #Create KML output.
   dhecData.writeKMLFile()
 

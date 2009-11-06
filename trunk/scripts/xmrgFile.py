@@ -92,12 +92,14 @@ class xmrgFile:
   """
   def openFile(self, filePath):
     self.fileName = filePath
+    self.compressedFilepath = ''
     retVal = False
     try:
       #Is the file compressed? If so, we want to uncompress it to a file for use.
       #The reason for not working with the GzipFile object directly is it is not compatible
       #with the array.fromfile() functionality.
       if( self.fileName.rfind('gz') ):
+        self.compressedFilepath = self.fileName
         #SPlit the filename from the extension.
         parts = self.fileName.split('.')
         self.fileName = parts[0] 
@@ -122,6 +124,22 @@ class xmrgFile:
         print( 'ERROR: ' + str(E)) 
    
     return(retVal)
+  
+  """
+ Function: cleanUp
+ Purpose: Called to delete the XMRG file that was just worked with. Can delete the unzipped file and/or 
+  the source zip file. 
+ Parameters:
+   deleteFile if True, will delete the unzipped binary file.
+   deleteCompressedFile if True, will delete the compressed file the working file was extracted from.
+  """
+  def cleanUp(self,deleteFile,deleteCompressedFile):
+    self.xmrgFile.close()
+    if(deleteFile):
+      os.remove(self.fileName)
+    if(deleteCompressedFile and len(self.compressedFilepath)):
+      os.remove(self.compressedFilepath)
+    return
     
   """
   Function: readFileHeader
@@ -657,28 +675,6 @@ class configSettings(xmlConfigFile):
       self.fileNameFilter = self.getEntry('//xmrgData/fileNameFilter')   
       self.xmrgDLDir = self.getEntry('//xmrgData/downloadDir')
 
-      bbox = self.getEntry('//xmrgData/dbSettings/bbox')
-      self.minLL = None
-      self.maxLL = None
-      if(bbox != None):
-        latLongs = bbox.split(';')
-        self.minLL = LatLong()
-        self.maxLL = LatLong()
-        latlon = latLongs[0].split(',')
-        self.minLL.latitude = float( latlon[0] )
-        self.minLL.longitude = float( latlon[1] )
-        latlon = latLongs[1].split(',')
-        self.maxLL.latitude = float( latlon[0] )
-        self.maxLL.longitude = float( latlon[1] )
-
-      #Delete data that is older than the LastNDays
-      self.xmrgKeepLastNDays = self.getEntry('//xmrgData/dbSettings/keepLastNDays')
-      if(self.xmrgKeepLastNDays != None):
-        self.xmrgKeepLastNDays = int(self.xmrgKeepLastNDays)
-      #Try to fill in any holes in the data going back N days.
-      self.backfillLastNDays = self.getEntry('//xmrgData/dbSettings/backfillLastNDays')
-      if(self.backfillLastNDays != None):
-        self.backfillLastNDays = int(self.backfillLastNDays)
       
     except Exception, e:
       print('ERROR: ' + str(e) + ' Terminating script')
@@ -724,11 +720,6 @@ class processXMRGData(object):
       if(self.configSettings.xmrgDLDir == None):
         self.configSettings.xmrgDLDir  = './';         
         self.logger.debug( "//xmrgData/downloadDir not provided, using './'." )
-      if(self.configSettings.xmrgKeepLastNDays == None):
-        self.configSettings.xmrgKeepLastNDays = 7
-        self.logger.debug( "'//xmrgData/dbSettings/keepLastNDays' not provided, using 7 days" )
-      if(self.configSettings.backfillLastNDays == None):
-        self.logger.debug( "'//xmrgData/dbSettings/backfillLastNDays' not provided, will not attempt to backfill data." )
         
     except Exception, E:
       self.lastErrorMsg = str(E)
@@ -795,7 +786,7 @@ class processXMRGData(object):
     try: 
       self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True)
             
-      #The latest completed hour will be current hour - 1.
+      #The latest completed hour will be current hour - 1 hour(3600 seconds).
       hr = time.time()-3600
       latestHour = time.strftime( "%Y-%m-%dT%H:00:00", time.localtime(hr))
       
@@ -807,32 +798,6 @@ class processXMRGData(object):
         xmrg = xmrgFile( self.loggerName )
         xmrg.openFile( fileName )
         return( self.processXMRGFile( xmrg ) )
-        """    
-        if( self.configSettings.minLL != None and 
-            self.configSettings.maxLL != None ):
-          self.logger.debug( "Using BBOX. LL-Latitude %f LL-Longitude: %f UR-Latitude: %f UR-Longitude: %f"\
-                              %(self.configSettings.minLL.latitude,self.configSettings.minLL.longitude,self.configSettings.maxLL.latitude,self.configSettings.maxLL.longitude))
-        if( writeToDB ):
-          self.writeLatLonDB( xmrg, self.configSettings.dbSettings['dbName'], self.configSettings.minLL, self.configSettings.maxLL )              
-        if( writeCSVFile ):
-          destFile = options.xmrgFile
-          if( ndx != -1 ):
-            destFile = parts[0] + '-latlon.csv'
-          else:
-            destFile += '-latlon.csv'        
-          xmrg.Reset()
-          xmrg.openFile( options.xmrgFile, 0 )
-          xmrg.writeLatLonCSVFile( destFile, True, 'inches', minLL, maxLL )
-          
-        if( writeASCIIGrid ):
-          destFile = options.xmrgFile
-          if( ndx != -1 ):
-            destFile = parts[0] + '-grid.txt'
-          else:
-            destFile += '-grid.txt'        
-          xmrg.Reset()
-          xmrg.openFile( options.xmrgFile, 0 )
-        """
       else:
         self.logger.error( "Unable to download file: %s" %(fileName))
           
