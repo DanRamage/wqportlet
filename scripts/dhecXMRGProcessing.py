@@ -515,34 +515,18 @@ class dhecXMRGProcessing(processXMRGData):
       
       xmrg.cleanUp(True,False)
       return(True)
-    
-if __name__ == '__main__':   
-  try:
-    parser = optparse.OptionParser()
-    parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
-                      help="Configuration file." )
-    (options, args) = parser.parse_args()
-    if( options.xmlConfigFile == None ):
-      parser.print_usage()
-      parser.print_help()
-      sys.exit(-1)
-    xmrgData = dhecXMRGProcessing(options.xmlConfigFile)
-    xmrgData.getLatestHourXMRGData()
-    #sys.exit(0)
-    
+  def createWatershedSummaries(self, outputFilepath):
     dhecData = processDHECRainGauges(options.xmlConfigFile)
-    dhecData.db.loadSpatiaLiteLib("C:\\Program Files\\sqlite-3_5_6\\libspatialite-1.dll")
-    #dhecData.db.createWatershedBoundaryTable( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\shapefiles\\HUCs_AOI")
+    dhecData.db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib)
     where = "WHERE platform_handle LIKE '%raingauge%'"
     rainGauges = dhecData.db.getPlatforms(where)
     
     for rainGauge in rainGauges:
-      sensorID = dhecData.db.sensorExists('precipitation_accumulated_daily','in',rainGauge['platform_handle'])
-      #Get the days on which we had rain reported at the rain gauge.
+      #Get the unique dates for the radar data.
       sql = "SELECT DISTINCT(strftime('%Y-%m-%d',collection_date)) as date FROM precipitation_radar;"
       rainDatesCursor = dhecData.db.executeQuery(sql)            
-      outFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\totals\\%s-radardata.csv" %(rainGauge['short_name']), "wt")  
-      outSrcFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\totals\\%s-source-radardata.csv" %(rainGauge['short_name']), "wt")  
+      outFile = open( "outputFilepath/%s-radardata.csv" %(rainGauge['short_name']), "wt")  
+      outSrcFile = open( "outputFilepath/%s-source-radardata.csv" %(rainGauge['short_name']), "wt")  
       outFile.write( 'date,total,avg\n' )
       outSrcFile.write('date,lat,lon,precip\n')
       print("Processing: %s"%(rainGauge['short_name']))
@@ -582,8 +566,19 @@ if __name__ == '__main__':
             avg = total/cnt
           outFile.write( '%s,%f,%f\n' %( strtDate,total,avg) )
       outFile.close() 
-      outSrcFile.close()     
-    #dhecData.db.dropWatershedBoundaryTable()
+      outSrcFile.close()             
+if __name__ == '__main__':   
+  try:
+    parser = optparse.OptionParser()
+    parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
+                      help="Configuration file." )
+    (options, args) = parser.parse_args()
+    if( options.xmlConfigFile == None ):
+      parser.print_usage()
+      parser.print_help()
+      sys.exit(-1)
+    xmrgData = dhecXMRGProcessing(options.xmlConfigFile)
+    xmrgData.getLatestHourXMRGData()    
     
   except Exception, E:
     info = sys.exc_info()        
