@@ -756,34 +756,76 @@ class dhecDB(xeniaSQLite):
         
     return(False)  
   """
+  Function: cleanIOOSData
+  Purpose: Deletes IOOS data from the database that is older than the number of days we want to keep, set in the
+    parameter NDaysToKeep.
+  Parameters:
+    NDaysToKeep is the number of days we want to remain in the database.
   """
-  def createWatershedBoundaryTable(self, shpfilePath):
-    #Clean the extension from the filepath. The docs for VirtualShape specifically spell out not to
-    #use the suffix.
-    shpfile = shpfilePath.replace(".shp", "")
-    sql = "CREATE VIRTUAL TABLE boundaries USING VirtualShape('%s', CP1252, 4326);" %(shpfile)
-    dbCursor = xeniaSQLite.executeQuery(self,sql)
+  def cleanIOOSData(self, NDaysToKeep):
+    sql = "DELETE FROM multi_obs WHERE m_date < datetime('now', '-%d days') AND platform_handle NOT LIKE '%dhec%';"
+    dbCursor = self.executeQuery(sql)
     if(dbCursor != None):
-      return(True)
-    return(False)
-  
-  def dropWatershedBoundaryTable(self):
-    sql = "DROP TABLE boundaries"
-    xeniaSQLite.executeQuery(self,sql)
-    return
-  
+      try:
+        self.DB.commit()
+        return(True)  
+      except sqlite3.Error, e:
+        if(self.logger != None):
+          self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
+        else:
+          print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
+        return(False)
+    return(None)
   """
   Function: getRadarDataForBoundary
   Purpose: For the given rain gauge(boundaryName), this function will return the radar data that is in that POLYGON.
   """
-  def getRadarDataForBoundary(self, boundaryName,dateTime):
+  def getRadarDataForBoundary(self, boundaryName,strtTime,endTime):
     sql = "SELECT latitude,longitude,precipitation FROM precipitation_radar \
             WHERE\
-            collection_date='%s' AND\
-            Intersects( GeomFromText(wkt_geometry), \
-                        GeomFromText((SELECT AsText(Geometry) FROM boundaries WHERE AOI ='%s')))"\
-            %(dateTime,boundaryName)
-    return(xeniaSQLite.executeQuery(self,sql))
+            collection_date >= '%s' AND collection_date < '%s'\
+            Intersects( Geom, \
+                        (SELECT Geometry FROM boundaries WHERE AOI ='%s'))"\
+            %(strtTime,endTime,boundaryName)
+    return(self.executeQuery(self,sql))
+  
+  """
+  Function: calculateWeightedAvg
+  Purpose: For a given station(rain gauge) this function queries the radar data, gets the grids that fall
+   into the watershed of interest and calculates the weighted average.
+  Parameters:
+    watershedName is the watershed we want to calculate the average for. For ease of use, I use the rain gauge name to 
+       name the watersheds.
+    startTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
+    endTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
+  """
+  def calculateWeightedAvg(self, watershedName, startTime, endTime):
+    weighted_avg = -1.0
+    #Get the percentages that the intersecting radar grid make up of the watershed boundary.      
+    sql = "SELECT * FROM(\
+           SELECT (Area(Intersection(radar.geom,bounds.Geometry))/Area(bounds.Geometry)) as percent,\
+                   radar.precipitation as precipitation\
+           FROM precipitation_radar radar, boundaries bounds\
+           WHERE radar.collection_date >= '%s' AND radar.collection_date <= '%s' AND\
+                bounds.AOI = '%s' AND\
+                Intersects(radar.geom, bounds.geometry))"\
+                %(startTime,endTime,watershedName)
+    dbCursor = self.executeQuery(sql)        
+    if(dbCursor != None):
+      total = 0.0
+      date = ''
+      cnt = 0
+      for row in dbCursor:
+        percent = row['percent']
+        precip = row['precipitation']
+        total += (percent * precip)
+        cnt += 1
+      dbCursor.close()
+      if(cnt > 0):
+        weighted_avg = total
+    else:
+      weighted_avg = None
+    return(weighted_avg)
 ################################################################################################################  
 class dhecConfigSettings(xmlConfigFile):
   def __init__(self, xmlConfigFilename):
@@ -1078,6 +1120,18 @@ class processDHECRainGauges:
           self.writeSummaryTable = False
           while(dataRow != None):
             if(dataRow.ID > 0):
+              #DHEC doesn't reset the time on the rain gauges to deal with daylight savings.
+              #Since we want to store the data using GMT times, we need to correct when we aren't in 
+              #DST.
+              dataTime = time.strptime(dataRow.dateTime, '%Y-%m-%dT%H:%M:%S')
+              dataTime = time.mktime(time.strptime(dataRow.dateTime, '%Y-%m-%dT%H:%M:%S'))              
+              #If it is DST, we need to add an hour to get the correct time when we convert to GMT, otherwise
+              #we'll be an hour off.             
+              if(time.localtime(dataTime)[-1]):
+                #3600 = number of seconds in 1 hour.
+                dataTime += 3600 
+              dataRow.dateTime = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(dataTime))      
+                
               #The idea behind this is that there are 2 ID types in the data. One with a signature of xx1 is a normal
               #10 minute interval sample, one with an xx2 signature is the 24 hour summary. So if the first bit is
               #set, my assumption is that it's a 10 minute sample.
@@ -1580,22 +1634,6 @@ if __name__ == '__main__':
     print("Usage: xmrgFile.py xmlconfigfile")
     sys.exit(- 1)    
 
-  sys.exit(0)
   dhecData = processDHECRainGauges(sys.argv[1])
-  dhecData.db.loadSpatiaLiteLib("C:\\Program Files\\sqlite-3_5_6\\libspatialite-1.dll")
-  dhecData.db.createWatershedBoundaryTable( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\shapefiles\\HUCs_AOI")
-  dbCursor = dhecData.db.getRadarDataForBoundary( 'nmb1', '2009-09-03T14:00:00')
-  if(dbCursor != None):
-    outFile = open( "C:\\Documents and Settings\\dramage\\workspace\\SVNSandbox\\wqportlet\\trunk\\data\\spatialitetext.csv", "wt")  
-    outFile.write( 'latitude,longitude,precip\n' )
-    for row in dbCursor:
-      outFile.write( '%f,%f,%f\n' %( row['latitude'],row['longitude'],row['precipitation']) )
-    outFile.close()
-    
-  dhecData.db.dropWatershedBoundaryTable()
-  
-  #convertSensorsToXeniaDB(dhecData, False, True)
-  #dhecData.processFiles()
-  #Create KML file for obs.
   
   
