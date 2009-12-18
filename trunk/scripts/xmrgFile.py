@@ -98,7 +98,7 @@ class xmrgFile:
       #Is the file compressed? If so, we want to uncompress it to a file for use.
       #The reason for not working with the GzipFile object directly is it is not compatible
       #with the array.fromfile() functionality.
-      if( self.fileName.rfind('gz') ):
+      if( self.fileName.rfind('gz') != -1):
         self.compressedFilepath = self.fileName
         #SPlit the filename from the extension.
         parts = self.fileName.split('.')
@@ -127,8 +127,8 @@ class xmrgFile:
   
   """
  Function: cleanUp
- Purpose: Called to delete the XMRG file that was just worked with. Can delete the unzipped file and/or 
-  the source zip file. 
+ Purpose: Called to delete the XMRG file that was just worked with. Can delete the uncompressed file and/or 
+  the source compressed file. 
  Parameters:
    deleteFile if True, will delete the unzipped binary file.
    deleteCompressedFile if True, will delete the compressed file the working file was extracted from.
@@ -189,8 +189,6 @@ class xmrgFile:
       byteCnt = header[0]  
       unpackFmt = ''
       hasDataNfoHeader = True
-      if( self.swapBytes ):
-        unpackFmt += '>'
         
       #Header for files written 1999 to present.
       if( byteCnt == 66 ):
@@ -205,11 +203,19 @@ class xmrgFile:
         #max value: int
         #version number: float
         unpackFmt += '=2s8s10s10s8s10s10sif'
+        #buf = array.array('B')
+        #buf.fromfile(self.xmrgFile,66)
+        #if( self.swapBytes ):
+        #  buf.byteswap()
+          
         buf = self.xmrgFile.read(66)
+        
         self.fileNfoHdrData = struct.unpack(unpackFmt, buf)
         self.srcFileOpen = 1
       #Files written June 1997 to 1999  
       elif( byteCnt == 38 ):
+        if( self.swapBytes ):
+          unpackFmt += '>'
         unpackFmt += '=10s10s10s8s'
         buf = self.xmrgFile.read(38)
         self.fileNfoHdrData = struct.unpack(unpackFmt, buf)
@@ -218,6 +224,8 @@ class xmrgFile:
       #Files written June 1997 to 1999. I assume there was some bug for this since the source
       #code also was writing out an error message.  
       elif( byteCnt == 37 ):
+        if( self.swapBytes ):
+          unpackFmt += '>'
         unpackFmt += '=10s10s10s8s'
         buf = self.xmrgFile.read(37)
         self.fileNfoHdrData = struct.unpack(unpackFmt, buf)
@@ -225,6 +233,8 @@ class xmrgFile:
         
       #Files written up to June 1997, no 2nd header.  
       elif( byteCnt == ( self.MAXX * 2 ) ):
+        if( self.swapBytes ):
+          unpackFmt += '>'
         if( loggerName != None ):
           self.logger.info( "Reading pre-1997 format" )
         else:
@@ -750,12 +760,13 @@ class processXMRGData(object):
   Returns:
     A string containing the xmrg filename.
   """    
-  def buildXMRGFilename(self, desiredDateTime):
+  def buildXMRGFilename(self, desiredDateTime, convertToUTC=True):
     desiredTime=time.strptime(desiredDateTime, "%Y-%m-%dT%H:00:00")
     #Internally we stores date/times as localtime, however the xmrg remote files are stamped as UTC
     #times so we have to convert.
-    desiredTime=time.mktime(desiredTime)
-    desiredTime=time.gmtime(desiredTime)
+    if(convertToUTC):
+      desiredTime=time.mktime(desiredTime)
+      desiredTime=time.gmtime(desiredTime)
 
     #Hourly filename format is: xmrgMMDDYYYYHHz.gz WHERE MM is month, DD is day, YYYY is year
     #HH is UTC hour     
