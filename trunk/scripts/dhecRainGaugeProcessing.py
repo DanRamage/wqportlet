@@ -63,7 +63,10 @@ class readRainGaugeData:
       self.file = csv.reader(open(self.filePath, "rb"))      
     except csv.Error, e:
       self.lastErrorMsg = ('file %s, line %d: %s' % (filename, self.file.line_num, e))
-      self.logger.error(self.lastErrorMsg)
+      if(self.logger != None):
+        self.logger.error( "Exception occured:", exc_info=1 )
+      else:
+        print(traceback.print_exc())
       return(False)
     return(True) 
   
@@ -140,7 +143,10 @@ class readRainGaugeData:
    
     except csv.Error, e:
       self.lastErrorMsg = ('File %s. Line %d: %s' % (self.filePath, self.file.line_num, e))
-      self.logger.error(self.lastErrorMsg)
+      if(self.logger != None):
+        self.logger.error( "Exception occured:", exc_info=1 )
+      else:
+        print(traceback.print_exc())
             
     return(dataRow)
 ################################################################################################################  
@@ -163,7 +169,8 @@ class dhecDB(xeniaSQLite):
     self.rowErrorCnt = 0
     self.lastErrorMsg = None
     if(xeniaSQLite.connect(self, dbName) == False):
-      self.logger.error(self.db.lastErrorMsg)
+      if(self.logger != None):
+        self.logger.error(self.db.lastErrorMsg)
       sys.exit(- 1)
   def __del__(self):
     self.DB.close()
@@ -182,12 +189,12 @@ class dhecDB(xeniaSQLite):
       dbCursor.execute(sql)    
       return(True)    
     except sqlite3.Error, e:        
-      self.procTraceback()
-      self.logger.critical("%s Function: %s Line: %s File: %s" %(e.args[0],self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
       sys.exit(-1)      
     except Exception, E:
-      self.procTraceback()
-      self.logger.critical("%s Function: %s Line: %s File: %s" %(str(e),self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))      
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
       sys.exit(-1)      
     return(False)
 
@@ -993,15 +1000,16 @@ class processDHECRainGauges:
     if(self.logger != None):
       logging.shutdown()
       
-  def procTraceback(self):
+  def procTraceback(self,excInfo):   
     import traceback
-    
-    info = sys.exc_info()        
-    excNfo = traceback.extract_tb(info[2], 1)
-    items = excNfo[0]
-    self.lastErrorFile = items[0]    
-    self.lastErrorLineNo = items[1]    
-    self.lastErrorFunc = items[2]    
+    if(excInfo == None):
+      excInfo = sys.exc_info()
+    exceptionType, exceptionValue, exceptionTraceback = excInfo
+  
+    excMsgs = traceback.format_exception(exceptionType, 
+                                    exceptionValue,
+                                    exceptionTraceback)
+    return(excMsgs[0] + excMsgs[1] + excMsgs[2])
       
   """
   Function: setFileList
@@ -1032,9 +1040,9 @@ class processDHECRainGauges:
           self.logger.debug("Deleted rain gauge file: %s" % (fullPath))
           
     except Exception, e:
-      self.procTraceback()
-      self.logger.critical("%s Function: %s Line: %s File: %s" %(str(e),self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))
-      sys.exit(- 1)
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
+      sys.exit(-1)
           
         
   """
@@ -1078,8 +1086,8 @@ class processDHECRainGauges:
       return(True)
       
     except Exception, e:
-      self.procTraceback()
-      self.logger.critical("%s Function: %s Line: %s File: %s" %(str(e),self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))
+      msg = self.procTraceback()
+      self.logger.critical(msg)
     return(False)
    
   """
@@ -1183,8 +1191,8 @@ class processDHECRainGauges:
           self.logger.critical(e.args[0] + ' Terminating execution')
           sys.exit(- 1)
     except Exception, e:
-      self.procTraceback()
-      self.logger.critical("%s Function: %s Line: %s File: %s" %(str(e),self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))      
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
       sys.exit(-1)
     
     #Log various statistics out.
@@ -1277,8 +1285,8 @@ class processDHECRainGauges:
           server.quit()       
           self.logger.debug("Sending alert email.")
         except Exception, E:
-          self.procTraceback()
-          self.logger.critical("%s Function: %s Line: %s File: %s" %(str(e),self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))      
+          msg = self.procTraceback()
+          self.logger.critical(msg)      
   
         
   """
@@ -1334,9 +1342,9 @@ class processDHECRainGauges:
         kmlFile.writelines(rainGaugeKML.writepretty())
         kmlFile.close()
       except Exception, e:
-        self.procTraceback()
-        self.logger.critical("%s Function: %s Line: %s File: %s" %(str(e),self.lastErrorFunc,self.lastErrorLineNo,self.lastErrorFile))      
-        sys.exit(- 1)
+        msg = self.procTraceback()
+        self.logger.critical(msg)      
+        sys.exit(-1)
     else:
       self.logger.error("Cannot write KML file, no filepath provided in config file.")
   """
@@ -1510,9 +1518,9 @@ class processDHECRainGauges:
               self.logger.critical("Error adding obs: %s on platform: %s to database\nError: %s" % ('precipitation', platformInfo['platform_handle'], self.db.lastErrorMsg))
               sys.exit(- 1)
     except Exception, e:
-      self.procTraceback()
-      self.logger.critical("%s Function: %s Line: %s File: %s" % (str(e), self.lastErrorFunc, self.lastErrorLineNo, self.lastErrorFile)) 
-      sys.exit(- 1)
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
+      sys.exit(-1)
       
 ################################################################################################################  
 

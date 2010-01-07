@@ -98,15 +98,27 @@ class dhecXMRGProcessing(processXMRGData):
       else:
         self.importDirectory = ""
         
+      #Flag to specify if we want to calculate the weighted averages for the watersheds as we write the radar data
+      #into the precipitation_radar table.
+      self.calcWeightedAvg = self.configSettings.getEntry('//xmrgData/processingSettings/calculateWeightedAverage')
+      if(self.calcWeightedAvg != None):
+        self.calcWeightedAvg = int(self.calcWeightedAvg)
+      else:
+        self.calcWeightedAvg = 0
         
     except Exception, E:
       self.lastErrorMsg = str(E) 
-      info = sys.exc_info()        
-      excNfo = traceback.extract_tb(info[2],1)
-      items = excNfo[0]
-      self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])      
-      self.logger.error( self.lastErrorMsg )
+      if(self.logger != None):
+        self.logger.error( "Exception occured:", exc_info=1 )
+      else:
+        print(traceback.print_exc())
+
+  def procTraceback(self):   
+    exceptionType, exceptionValue, exceptionTraceback = sys.exc_info()
     
+    return(repr(traceback.format_exception(exceptionType, 
+                                    exceptionValue,
+                                    exceptionTraceback)))
   def importFiles(self, importDirectory=None):
     try:
       if(importDirectory == None):
@@ -134,11 +146,8 @@ class dhecXMRGProcessing(processXMRGData):
         month = time.strptime(fileTime, "%Y-%m-%dT%H:%M:%S")
         month = int(time.strftime("%m", month))
         #If the file is outside the month range we are interested in, go on to the next file. 
-        if(month < startMonth):
+        if(month < startMonth or month > endMonth):
           continue
-        #Break out of the loop since we have processed all the months we are interested in.
-        elif(month > endMonth):
-          break
         fullPath = "%s/%s" %(importDirectory,fileName)  
         #Make sure we are trying to import a file and not a directory.
         if(os.path.isfile(fullPath) != True):
@@ -147,14 +156,14 @@ class dhecXMRGProcessing(processXMRGData):
         if( self.processXMRGFile(fullPath, db)):
           self.logger.debug("Successfully processed: %s" %(fileName))
         else:
-          self.logger.error("Unable to process: %s" %(fileName))                
+          self.logger.error("Unable to process: %s" %(fileName))
+      db.DB.close()                
     except Exception, E:
       self.lastErrorMsg = str(E) 
-      info = sys.exc_info()        
-      excNfo = traceback.extract_tb(info[2],1)
-      items = excNfo[0]
-      self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])      
-      self.logger.error(self.lastErrorMsg)
+      if(self.logger != None):
+        self.logger.error( "Exception occured:", exc_info=1 )
+      else:
+        print(traceback.print_exc())
       
   def getLatestHourXMRGData(self):    
     try: 
@@ -197,8 +206,8 @@ class dhecXMRGProcessing(processXMRGData):
                 break          
       db.DB.close()
       
-      del dateList[:]
-      dateList.append('2009-10-14T16:00:00')
+      #del dateList[:]
+      #dateList.append('2009-10-14T16:00:00')
       
       for date in dateList:
         fileName = self.buildXMRGFilename(date,False)
@@ -214,11 +223,10 @@ class dhecXMRGProcessing(processXMRGData):
           
     except Exception, E:
       self.lastErrorMsg = str(E) 
-      info = sys.exc_info()        
-      excNfo = traceback.extract_tb(info[2],1)
-      items = excNfo[0]
-      self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])      
-      self.logger.error(self.lastErrorMsg)
+      if(self.logger != None):
+        self.logger.error( "Exception occured:", exc_info=1 )
+      else:
+        print(traceback.print_exc())
     return(None)
 
   def processXMRGFile(self,fileName, db=None):
@@ -421,14 +429,10 @@ class dhecXMRGProcessing(processXMRGData):
                 featureId += 1                            
       except Exception, E:
         self.lastErrorMsg = str(E)
-        info = sys.exc_info()        
-        excNfo = traceback.extract_tb(info[2],1)
-        items = excNfo[0]
-        self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])
         if(self.logger != None):
-          self.logger.error(self.lastErrorMsg)
+          self.logger.error( "Exception occured:", exc_info=1 )
         else:
-          print(self.lastErrorMsg)        
+          print(traceback.print_exc())
         return(False)
       
       xmrg.cleanUp(self.deleteSourceFile,self.deleteCompressedSourceFile)
@@ -541,36 +545,34 @@ class dhecXMRGProcessing(processXMRGData):
           else:
             print( 'Processed %d rows. Added: %d records to database.' % (row + 1),recsAdded )
           #NOw calc the weighted averages for the watersheds and add the measurements to the multi-obs table
-          #if(rainDataFound):
-          #  self.calculateWeightedAverages(filetime,filetime,db,True)
+          if(rainDataFound and self.calcWeightedAvg):
+            self.calculateWeightedAverages(filetime,filetime,db,True)
       except Exception, E:
         self.lastErrorMsg = str(E)
-        info = sys.exc_info()        
-        excNfo = traceback.extract_tb(info[2],1)
-        items = excNfo[0]
-        self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])
         if(self.logger != None):
-          self.logger.error(self.lastErrorMsg)
+          self.logger.error( "Exception occured:", exc_info=1 )
         else:
-          print(self.lastErrorMsg)        
+          print(traceback.print_exc())
         return(False)
       
       xmrg.cleanUp(self.deleteSourceFile,self.deleteCompressedSourceFile)
       return(True)
-    
-  def calculateWeightedAverages(self,startDate,endDate,dbConnection,addSensor=False):
+        
+  def calculateWeightedAverages(self,startDate,endDate,dbConnection,addSensor=False, rainGaugeList=None):
     try:
       if(self.logger != None):
         self.logger.debug("calculateWeightedAverages StartDate: %s EndDate: %s" %(startDate,endDate))
-      #Get all the raingauges.
-      where = "WHERE platform_handle LIKE '%raingauge%'"
-      rainGauges = dbConnection.getPlatforms(where)
-      rainGaugeList = []
-      #We create a list of the gauges. The reason I don't loop through the cursor is if we 
-      #have the addSensor set to True and we add a sensor and commit the changes to the database,
-      #our open cursor is no longer valid.
-      for rainGauge in rainGauges:
-        rainGaugeList.append(rainGauge['short_name'])
+      #If we didn't get a list of the rain gauges, create one.
+      if(rainGaugeList == None):
+        #Get all the raingauges.
+        where = "WHERE platform_handle LIKE '%raingauge%'"
+        rainGauges = dbConnection.getPlatforms(where)
+        rainGaugeList = []
+        #We create a list of the gauges. The reason I don't loop through the cursor is if we 
+        #have the addSensor set to True and we add a sensor and commit the changes to the database,
+        #our open cursor is no longer valid.
+        for rainGauge in rainGauges:
+          rainGaugeList.append(rainGauge['short_name'])
       recsAdded = False
       for rainGauge in rainGaugeList:  
         platformHandle = "nws.%s.radar" %(rainGauge)
@@ -624,79 +626,54 @@ class dhecXMRGProcessing(processXMRGData):
       return(True)
     except Exception, E:
       self.lastErrorMsg = str(E)
-      info = sys.exc_info()        
-      excNfo = traceback.extract_tb(info[2],1)
-      items = excNfo[0]
-      self.lastErrorMsg += " File: %s Line: %d Function: %s" % (items[0],items[1],items[2])
       if(self.logger != None):
-        self.logger.error(self.lastErrorMsg)
+        self.logger.error( "Exception occured:", exc_info=1 )
       else:
         print(self.lastErrorMsg)        
       return(False)
 
           
-  def createWatershedSummaries(self, outputFilepath, startDate, endDate):
-    dhecData = processDHECRainGauges(options.xmlConfigFile)
-    dhecData.db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib)
+  def createWatershedSummaries(self):
+    if(self.logger != None):
+      self.logger.debug("Entering createWatershedSummaries.")
+      
+    db = dhecDB(self.configSettings.dbSettings['dbName'], self.loggerName)
+    if(self.logger != None):
+      self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
+    if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
+      if(self.logger != None):
+        self.logger.debug("Error loading: %s Error: %s" %(self.configSettings.spatiaLiteLib,db.lastErrorMsg))
+      
+    #Get the unique dates for the radar data.
+    sql = "SELECT DISTINCT(collection_date) as date FROM precipitation_radar ORDER BY collection_date ASC;"
+    rainDatesCursor = db.executeQuery(sql)            
+    dates = []
+    for dateRow in rainDatesCursor:         
+      date = dateRow['date']
+      dates.append(date)
+    #Get all the raingauges.
     where = "WHERE platform_handle LIKE '%raingauge%'"
-    rainGauges = dhecData.db.getPlatforms(where)
-    
+    rainGauges = db.getPlatforms(where)
+    rainGaugeList = []
+    #We create a list of the gauges. The reason I don't loop through the cursor is if we 
+    #have the addSensor set to True and we add a sensor and commit the changes to the database,
+    #our open cursor is no longer valid.
     for rainGauge in rainGauges:
-      #Get the unique dates for the radar data.
-      sql = "SELECT DISTINCT(strftime('%Y-%m-%d',collection_date)) as date FROM precipitation_radar;"
-      rainDatesCursor = dhecData.db.executeQuery(sql)            
-      outFile = open( "%s/%s-radardata.csv" %(outputFilepath,rainGauge['short_name']), "wt")  
-      outSrcFile = open( "%s/%s-source-radardata.csv" %(outputFilepath,rainGauge['short_name']), "wt")  
-      outFile.write( 'Start Date,End Date,Weighted Avg\n' )
-      outSrcFile.write('date,lat,lon,precip,grid percent of watershed\n')
-      print("Processing: %s"%(rainGauge['short_name']))
-      dates = []
-      for dateRow in rainDatesCursor:         
-        date = dateRow['date']
-        dates.append(date)
-      rainDatesCursor.close()
-      #Get the geom for the watershed boundary.
-      for date in dates:
-        
-        #Get the percentages that the intersecting radar grid make up of the watershed boundary.      
-        sql = "SELECT * FROM(\
-               SELECT (Area(Intersection(radar.geom,bounds.Geometry))/Area(bounds.Geometry)) as percent,\
-                       radar.precipitation as precipitation,\
-                       radar.latitude as latitude,\
-                       radar.longitude as longitude,\
-                       radar.collection_date\
-               FROM precipitation_radar radar, boundaries bounds\
-               WHERE radar.collection_date >= '%s' AND radar.collection_date <= '%s' AND\
-                    bounds.AOI = '%s' AND\
-                    Intersects(radar.geom, bounds.geometry))"\
-                    %(startDate,endDate,rainGauge['short_name'])
-        dbCursor = dhecData.db.executeQuery(sql)        
-        if(dbCursor != None):
-          total = 0.0
-          cnt = 0
-          weight = 0
-          date = ''
-          for row in dbCursor:
-            lat = row['latitude']
-            lon = row['longitude']
-            percent = row['percent']
-            precip = row['precipitation']
-            total += (percent * precip)
-            weight += percent
-            outSrcFile.write( '%s,%f,%f,%f,%f\n' %(row['collection_date'],lat,lon,precip,percent)) 
-            cnt += 1
-          dbCursor.close()
-          weighted_avg = 0
-          if(cnt > 0):
-            weighted_avg = total/weight
-          outFile.write( '%s,%s,%f\n' %( startDate,endDate,weighted_avg) )
-      outFile.close() 
-      outSrcFile.close()             
+      rainGaugeList.append(rainGauge['short_name'])
+      
+    rainDatesCursor.close()
+    #Get the geom for the watershed boundary.
+    for date in dates:       
+      self.calculateWeightedAverages(date,date,db,True,rainGaugeList)   
+    db.DB.close()
+    
+  
+    
 if __name__ == '__main__':   
   try:
     import psyco
     psyco.full()
-    
+        
     parser = optparse.OptionParser()
     parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
                       help="Configuration file." )
@@ -704,20 +681,22 @@ if __name__ == '__main__':
                       help="Get latest XMRG files." )
     parser.add_option("-i", "--ImportXMRGDir", dest="importXMRGDir", action= 'store_true',
                       help="Directory with XMRG files to import." )
+    parser.add_option("-s", "--CreateWatershedRadarSummaries", dest="createRadarSummaries", action= 'store_true',
+                      help="For each rain gauge, create the watershed summary for each day there is data in the precipitation_radar table." )
     (options, args) = parser.parse_args()
     if( options.xmlConfigFile == None ):
       parser.print_usage()
       parser.print_help()
-      sys.exit(-1)
+#      sys.exit(-1)
     xmrgData = dhecXMRGProcessing(options.xmlConfigFile)
     if(options.getLatest):
       xmrgData.getLatestHourXMRGData()
-    if(options.ImportXMRGDir):      
+    elif(options.importXMRGDir):      
       xmrgData.importFiles()
+    elif(options.createRadarSummaries):
+      xmrgData.createWatershedSummaries()
+      
       
   except Exception, E:
-    info = sys.exc_info()        
-    excNfo = traceback.extract_tb(info[2],1)
-    items = excNfo[0]    
-    print( str(E) +" File: %s Line: %d Function: %s" % (items[0],items[1],items[2]) )
+    print( traceback.print_exc() )
     
