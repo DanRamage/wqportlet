@@ -15,3 +15,22 @@ This page discusses the class object used to open and process and XMRG file from
 ===SQLite Stuff===
   * [http://www.gaia-gis.it/spatialite/binaries.html Spatialite] geo-spatial library for the appropriate platform(Winders or Linux)
   * [http://code.google.com/p/wqportlet/source/browse/trunk/data/databases/nexrad.db nexrad.db] database. This is a database containing the precipitation table as well as the needed geo-spatial tables.
+
+== Getting it Running ==
+
+The xmrgFile.py script uses command line parameters to import an XMRG file. The following is an example of what your command line might look like:
+{{{
+python xmrgFile --DatabaseFile=".\nexrad.db" 
+--BBOX="-81.1 32.8,-77.8 34" 
+--SpatialiteLib="C:\Program Files\sqlite-3_5_6\libspatialite-1.dll" --XMRGFile=".\xmrg1014200916z"
+--Polygon="-78.711 33.796, -78.711 33.85, -78.546 33.85, -78.546 33.839, -78.711 33.796"
+}}}
+
+Command line parameters:
+    * --DatabaseFile Full path to the database used to store the imported file.
+    * --SpatialiteLib Full path to the spatialite library. For windows this will be a DLL, for Linux a shared object file.
+    * --XMRGFile The XMRG file to process.
+    * --BBOX The bounding box to use to select the area of interest from the source XMRG file and store into the database. If not provided, the entire XMRG file is imported.
+    * --StoreDryPrecipCells If set, when importing the XMRG file, cells that had precipitation of 0 will be stored in the database. Storing the dry cells has the potential to make the database quite larger depending on the area the BBOX covers.
+    * --Polygon Polygon of interest to use for querying against the radar data.
+ 
