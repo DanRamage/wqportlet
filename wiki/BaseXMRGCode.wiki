@@ -18,7 +18,7 @@ This page discusses the class object used to open and process and XMRG file from
 
 == Getting it Running ==
 
-The xmrgFile.py script uses command line parameters to import an XMRG file. The following is an example of what your command line might look like:
+The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py xmrgFile.py] script uses command line parameters to import an XMRG file. The following is an example of what your command line might look like:
 {{{
 python xmrgFile --DatabaseFile=".\nexrad.db" 
 --BBOX="-81.1 32.8,-77.8 34" 
