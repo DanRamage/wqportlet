@@ -30,7 +30,7 @@ Command line parameters:
     * --DatabaseFile Full path to the database used to store the imported file.
     * --SpatialiteLib Full path to the spatialite library. For windows this will be a DLL, for Linux a shared object file.
     * --XMRGFile The XMRG file to process.
-    * --BBOX The bounding box to use to select the area of interest from the source XMRG file and store into the database. If not provided, the entire XMRG file is imported.
+    * --BBOX The bounding box to use to select the area of interest from the source XMRG file and store into the database. If not provided, the entire XMRG file is imported. The format is "Bottom Left Longitude Bottom Right Latitude, Top Right Longitude Top Right Latitude".
     * --StoreDryPrecipCells If set, when importing the XMRG file, cells that had precipitation of 0 will be stored in the database. Storing the dry cells has the potential to make the database quite larger depending on the area the BBOX covers.
-    * --Polygon Polygon of interest to use for querying against the radar data.
+    * --Polygon Polygon of interest to use for querying against the radar data. The fomrat starts with the bottom left longitude and latitude, then continues around the polygon with the last longitude latitude pair once again being the bottom left.
  
