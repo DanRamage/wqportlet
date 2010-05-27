@@ -10,5 +10,8 @@ This page discusses the class object used to open and process and XMRG file from
   * Python version 2.5.2
   * Non-standard packages
     * gzip(This one may be standard)
-    * numpy
+    * numpy(Might be standard as well, code usesthe zeros class)
     * pysqlite2
+===SQLite Stuff===
+  * [http://www.gaia-gis.it/spatialite/binaries.html Spatialite] geo-spatial library for the appropriate platform(Winders or Linux)
+  * [http://code.google.com/p/wqportlet/source/browse/trunk/data/databases/nexrad.db nexrad.db] database. This is a database containing the precipitation table as well as the needed geo-spatial tables.
