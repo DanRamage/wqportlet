@@ -1,0 +1,14 @@
+#Page discusses the base class, xmrgFile in xmrgFile.py
+
+= Processing an XMRG File =
+
+This page discusses the class object used to open and process and XMRG file from the NEXRAD system.
+
+
+== Required Bits and Pieces ==
+===Python===
+  * Python version 2.5.2
+  * Non-standard packages
+    * gzip(This one may be standard)
+    * numpy
+    * pysqlite2
