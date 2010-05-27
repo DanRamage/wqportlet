@@ -11,12 +11,23 @@ This page discusses the class object used to open and process and XMRG file from
   * Non-standard packages
     * gzip(This one may be standard)
     * numpy(Might be standard as well, code usesthe zeros class)
-    * pysqlite2
+    * [http://code.google.com/p/pysqlite/ pysqlite2]
 ===SQLite Stuff===
   * [http://www.gaia-gis.it/spatialite/binaries.html Spatialite] geo-spatial library for the appropriate platform(Winders or Linux)
   * [http://code.google.com/p/wqportlet/source/browse/trunk/data/databases/nexrad.db nexrad.db] database. This is a database containing the precipitation table as well as the needed geo-spatial tables.
 
 == Getting it Running ==
+
+This code will read various revisions of the XMRG files and store the data into the precipitation_radar table in the nexrad.db database. The database table is really just a convenient place to store the data to then perform spatial queries using the Spatialite library. The project I am working on has various watersheds I am interested in. I use the polygons that represent these watersheds to query the radar data to see what if any precipitation fell. I get the area of intersection:
+{{{
+SELECT * FROM(\
+           SELECT (Area(Intersection(radar.geom,GeomFromText('%s')))/Area(GeomFromText('%s'))) as percent,\
+                   radar.precipitation as precipitation\
+           FROM precipitation_radar radar \
+           WHERE radar.collection_date >= '%s' AND radar.collection_date <= '%s' AND\
+                Intersects(radar.geom, GeomFromText('%s')))
+}}}
+and then calculate a weighted average.
 
 The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py xmrgFile.py] script uses command line parameters to import an XMRG file. The following is an example of what your command line might look like:
 {{{
