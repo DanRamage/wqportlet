@@ -215,7 +215,6 @@ The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py 
    into the watershed of interest and calculates the weighted average.
 
   _Parameters:_
-    watershedName is the watershed we want to calculate the average for. For ease of use, I use the rain gauge name to 
-       name the watersheds.
+    boundaryPolygon is a list of longitude latitude pairs that make up the polygon. The format for the string is "longitude1 latitude1, longitude2 latitude2, ..., longitude1 latitude1".
     startTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
     endTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
