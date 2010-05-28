@@ -52,3 +52,21 @@ The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py 
   * xmrgDB is the object that handles the reads/writes from the database.
   * hrapCoord is a simple object that represents a HRAP grid coordinate.
   * LatLong is a simple latitude/longitude object.
+  
+  === xmrgFile Object ===
+  These are the member functions in the object.
+  * __init__(loggerName=None)
+
+  * Reset()
+  * openFile(filePath)
+  * cleanUp(deleteFile,deleteCompressedFile)
+  * readFileHeader()
+  * readRecordTag()
+  * readRow()
+  * readAllRows()
+  * inBBOX(hrapPoint)
+  * hrapCoordToLatLong(hrapPoint)
+  * latLongToHRAP(latLong, roundToNearest=False, adjustToOrigin=False):
+  * biLinearInterpolatePoint(x, y, z0, z1, z2, z3)
+  * getCollectionDateFromFilename(fileName)
+  
