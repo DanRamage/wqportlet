@@ -155,3 +155,12 @@ The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py 
   _Return:_
     A string representing the date and time in the form: YYYY-MM-DDTHH:MM:SS
   
+=== xmrgDB  Object ===
+
+  * *__init__*
+  * *connect(dbFilepath, spatiaLiteLibFile='')*
+  * *executeQuery(sqlQuery)* 
+  * *cleanUp(olderThanDate)*
+  * *buildPolygonString(polygonPtList)*
+  * *getRadarDataForBoundary(boundaryPolygon,strtTime,endTime)*
+  * *calculateWeightedAvg(boundaryPolygon, startTime, endTime)*
