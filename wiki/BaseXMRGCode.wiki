@@ -158,9 +158,64 @@ The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py 
 === xmrgDB  Object ===
 
   * *__init__*
+  _Purpose:_ Initializes the object
+
+  _Parameters:_ None
+
+  _Returns:_ None
+
   * *connect(dbFilepath, spatiaLiteLibFile='')*
+  _Purpose:_ Connects to the sqlite database file passed in dbFilepath.
+
+  _Parameters:_
+    dbFilepath is the fully qualified path to the sqlite database.
+
+  _Returns:_ True if we successfully connected to the database, otherwise False.
+  If an exception occured, the stack trace is written into self.lastErrorMsg.
+
   * *executeQuery(sqlQuery)* 
+  _Purpose:_ Executes the sql statement passed in.
+
+  _Parameters:_
+    sqlQuery is a string containing the query to execute.
+
+  _Return:_
+    If successfull, a cursor is returned, otherwise None is returned.
+
   * *cleanUp(olderThanDate)*
+  _Purpose:_ This function will remove all data older the olderThanDate from the precipitation_radar table.
+
+  _Parameters:_
+    olderThanDate is the comparison date to use.
+
+  _Return: _
+    True if successful, otherwise False.
+
   * *buildPolygonString(polygonPtList)*
+  _Purpose:_ Takes a list of latitudes/longitudes representing a polygon and builds a GIS POLYGON string.
+
+  _Parameters:_
+    polygonPtList is a list of x,y tuples which forms the polygon we use to determine the intersection with the radar polygons.
+  _Return:_
+    A GIS POLYGON string that can be used for a SQL spatial query.
+
   * *getRadarDataForBoundary(boundaryPolygon,strtTime,endTime)*
+  _Purpose:_ For the given rain gauge(boundaryName), this function will return the radar data that is in that POLYGON.
+
+  _Parameters:_
+    boundaryPolygon is a list of x,y tuples which forms the polygon we use to determine the intersection with the radar polygons.
+    strtTime is the datetime to begin the search
+    endTime is the datetime to end the search.
+
+  _Return:_
+    Database cursor with the results if query is successful, otherwise None.
+
   * *calculateWeightedAvg(boundaryPolygon, startTime, endTime)*
+  _Purpose:_ For a given station(rain gauge) this function queries the radar data, gets the grids that fall
+   into the watershed of interest and calculates the weighted average.
+
+  _Parameters:_
+    watershedName is the watershed we want to calculate the average for. For ease of use, I use the rain gauge name to 
+       name the watersheds.
+    startTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
+    endTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
