@@ -4,6 +4,7 @@ import array
 import struct
 import csv
 import time
+import optparse
 import logging
 import logging.handlers
 from collections import defaultdict  
@@ -11,9 +12,63 @@ from lxml import etree
 from ftplib import FTP
 from pysqlite2 import dbapi2 as sqlite3
 from xeniatools.xmlConfigFile import xmlConfigFile
-from xeniatools.xenia import xeniaSQLite
+if(sys.platform == "win32"):
+  sys.path.insert(0, "C:\Documents and Settings\dramage\workspace\BeachAdvisory")
+from dhecDB import dhecDB
+
+def procTraceback(excInfo):   
+  import traceback
+  if(excInfo == None):
+    excInfo = sys.exc_info()
+  exceptionType, exceptionValue, exceptionTraceback = excInfo
+
+  excMsgs = traceback.format_exception(exceptionType, 
+                                  exceptionValue,
+                                  exceptionTraceback)
+  return(excMsgs[0] + excMsgs[1] + excMsgs[2])
 
 
+"""
+Class: processTideData
+Purpose: This class reads a file from the tidesandcurrents NOAA site and parses the data line by line.
+In the future, I would like to expand this to directly query the website to get the data and save the file
+automatically.
+The data comes from: http://tidesandcurrents.noaa.gov/data_menu.shtml?stn=8661070%20Springmaid%20Pier,%20SC&type=Historic+Tide+Data
+"""
+class processTideData(object):
+  def __init__(self):
+    self.tideFile = None
+    self.lineNo= 0
+
+  def openFile(self, filePath):
+    try:
+      self.tideFilePath = filePath
+      self.tideFile = open(filePath, 'r')
+      return(True)
+    except IOError, e:
+      self.errorMsg = procTraceback(sys.exc_info())
+    return(False)        
+  
+  def readLine(self):
+    line = self.tideFile.readline()
+    self.lineNo += 1
+    if(len(line)):
+      #Now break apart the pieces
+      parts = line.split()
+      stationID = ""
+      date = ""
+      level = None
+      tideType = None
+      if(len(parts) == 5):
+        stationID = parts[0]
+        date = "%s %s" %(parts[1],parts[2])
+        date = time.strptime(date, '%Y%m%d %H:%M')
+        date = time.strftime('%Y-%m-%dT%H:%M:00', date)
+        level = float(parts[3])
+        tideType = parts[4]
+      return(stationID, date, level, tideType)
+    else:
+      return(None,None,None,None)
 ################################################################################################################  
 """
   Class: rainGaugeData
@@ -150,689 +205,6 @@ class readRainGaugeData:
             
     return(dataRow)
 ################################################################################################################  
-"""
-Class: dhecDB
-Purpose: Interface to the dhec beach advisory prediction database.
-"""
-class dhecDB(xeniaSQLite):
-  """
-  Function: __init__
-  Purpose: Initializes the database object. Connects to the database passed in on the dbName parameter.
-  """
-  def __init__(self, dbName, loggerName=None):
-    xeniaSQLite.__init__(self)
-    self.logger = None
-    if(loggerName != None):
-      self.logger = logging.getLogger(loggerName)
-      self.logger.info("creating an instance of dhecDB")
-    self.totalRowsProcd = 0
-    self.rowErrorCnt = 0
-    self.lastErrorMsg = None
-    if(xeniaSQLite.connect(self, dbName) == False):
-      if(self.logger != None):
-        self.logger.error(self.db.lastErrorMsg)
-      sys.exit(- 1)
-  def __del__(self):
-    self.DB.close()
-  
-  
-  """
-  Function: vacuumDB
-  Purpose: Cleanup the database. 
-  Parameters: None
-  Return: True if successful, otherwise False.
-  """    
-  def vacuumDB(self):
-    try:
-      sql = "VACUUM;"
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)    
-      return(True)    
-    except sqlite3.Error, e:        
-      msg = self.procTraceback()
-      self.logger.critical(msg)      
-      sys.exit(-1)      
-    except Exception, E:
-      msg = self.procTraceback()
-      self.logger.critical(msg)      
-      sys.exit(-1)      
-    return(False)
-
-    
-  """
-  Function: writePrecip
-  Purpose: Writes an entry into the precipitation table. Normally this is what we do when we
-   are parsing the rain gauge data file to.
-  Parameters: 
-    datetime is the date and time for the entry
-    rain_gauge is the name of the rain gauge the entry is for
-    batt_voltage is the battery voltage of the rain gauge
-    program_code is teh program code for the rain gauge
-    rainfall is the rainfall amount for
-  Return: True if successful otherwise false. 
-  """
-  def writePrecip(self, datetime, rain_gauge, batt_voltage, program_code, rainfall, wind=None, windDir=None):
-    
-    #Get the platform info so we can get the lat/long for the sensor.
-    platformHandle = "dhec.%s.raingauge" % (rain_gauge)
-    platformCursor = xeniaSQLite.getPlatformInfo(self, platformHandle)
-    if(platformCursor != None):
-      nfo = platformCursor.fetchone()
-      if(nfo != None):
-        mVals = []
-        mVals.append(rainfall)
-        mVals.append(batt_voltage)
-        mVals.append(program_code)                                 
-        if(xeniaSQLite.addMeasurement(self,
-                                   'precipitation', 'in',
-                                   platformHandle,
-                                   datetime,
-                                   nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                   0,
-                                   mVals,
-                                   1,
-                                   False) != True):
-          self.logger.error( "%s"\
-                             %(self.getErrorInfo()) )
-          xeniaSQLite.clearErrorInfo(self)
-          return(False)
-        
-        if(wind != None):
-          mVals = []
-          mVals.append(wind)
-          if(xeniaSQLite.addMeasurement(self,
-                                     'wind_speed', 'mph',
-                                     platformHandle,
-                                     datetime,
-                                     nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                     0,
-                                     mVals,
-                                     1,
-                                     False) != True):           
-            self.logger.error( "%s"\
-                             %(self.getErrorInfo()) )
-            xeniaSQLite.clearErrorInfo(self)
-            return(False)
-        if(windDir != None):    
-          mVals.append(windDir)
-          if(xeniaSQLite.addMeasurement(self,
-                                     'wind_from_direction', 'degrees_true',
-                                     platformHandle,
-                                     datetime,
-                                     nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                     0,
-                                     mVals,
-                                     1,
-                                     False) != True):
-            self.logger.error( "%s"\
-                             %(self.getErrorInfo()) )
-            xeniaSQLite.clearErrorInfo(self)
-            return(False)
-      else:
-        self.logger.error( "Platform: %s not found. Cannot add measurement." %(platformHandle) )
-    else:
-      self.logger.error( "%s" %(self.getErrorInfo()) )
-      
-    return(True)  
-  """
-  Function: write24HourSummary
-  Purpose: Writes an entry into the precip_daily_summary table. This is the days summary for the rain gauge.
-  Parameters: 
-    datetime is the date and time for the entry
-    rain_gauge is the name of the rain gauge the entry is for
-    rainfall is the rainfall amount for
-  Return: True if successful otherwise false. 
-  """
-  def write24HourSummary(self, datetime, rain_gauge, rainfall):
-    #Get the platform info so we can get the lat/long for the sensor.
-    platformHandle = "dhec.%s.raingauge" % (rain_gauge)
-    platformCursor = xeniaSQLite.getPlatformInfo(self, platformHandle)
-    if(platformCursor != None):
-      nfo = platformCursor.fetchone()
-      if(nfo != None):
-        mVals = []
-        mVals.append(rainfall)
-        if(xeniaSQLite.addMeasurement(self,
-                                   'precipitation_accumulated_daily', 'in',
-                                   platformHandle,
-                                   datetime,
-                                   nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                   0,
-                                   mVals,
-                                   1,
-                                   True) != True):
-          self.logger.error( "%s Function: %s Line: %s File: %s"\
-                           %(self.lastErrorMsg,self.lastErrorFunc, self.lastErrorLineNo, self.lastErrorFile) )
-          xeniaSQLite.clearErrorInfo(self)
-          return(False)
-
-    
-  """
-  Function: getInspectionDates
-  Purpose: Queries the dhec_beach table and returns the dates of the inspections for the given
-    station.
-  Parameters: 
-    station is the name of the station we are quering the dates for.
-  Return: A list of the dates. If none were found, the list is empty. 
-  """
-  def getInspectionDates(self, station):
-    dateList = []
-    sql = "SELECT insp_date,insp_time FROM dhec_beach WHERE station = '%s' ORDER BY insp_date ASC" % station
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      for row in dbCursor:
-        time = int(row['insp_time']) 
-        #insp_time is in a hhmm format, so we break it apart.
-        hour = time / 100    #Get the hours
-        minute = time - (hour * 100) # Get the minutes
-        dateList.append("%sT%02d:%02d:00" % (row['insp_date'], hour, minute))
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.critical("ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql))      
-      sys.exit(- 1)
-    return(dateList)
-  """
-  Function: getMoonPhase
-  Purpose: For the given day, return the moon phase(percentage of moon visible).
-  Parameters:
-    date is the day of interest
-  Return:
-    a floating point number representing the percentage of moon visible
-  """
-  def getMoonPhase(self, date):
-    moonPhase = - 1.0
-    sql = "SELECT phase FROM moon_phase WHERE date = strftime( '%%Y-%%m-%%d','%s')" % (date)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      val = dbCursor.fetchone()
-      if(val['phase'] != None):
-        moonPhase = float(val['phase'])
-
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.critical("ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: \"%s\" Terminating script!" % (e.args[0], sql))      
-      sys.exit(- 1)
-      
-    return(moonPhase)
-  
-  """
-  Function: writeSummaryForStation
-  Purpose:  Writes the entry for day into the summary table. 
-  Parameters:
-    datetime is the date for the summary
-    station is the name of the station we are quering the dates for.
-  Return: A list of the dates. If none were found, the list is empty. 
-  """
-  def writeSummaryForStation(self, datetime, station):
-    #import datetime
-    
-    sql = "SELECT  dhec_beach.station,dhec_beach.insp_type,dhec_beach.etcoc,dhec_beach.tide,dhec_beach.salinity,dhec_beach.weather,monitoring_stations.rain_gauge,precip_daily_summary.rainfall \
-          FROM dhec_beach,monitoring_stations,precip_daily_summary \
-          WHERE \
-          dhec_beach.station = monitoring_stations.station AND \
-          monitoring_stations.rain_gauge = precip_daily_summary.rain_gauge AND \
-          dhec_beach.station = '%s' AND \
-          dhec_beach.insp_date = strftime('%%Y-%%m-%%d', datetime('%s') ) and \
-          precip_daily_summary.date = strftime('%%Y-%%m-%%dT23:59:00',datetime('%s'))" % (station, datetime, datetime)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      beachData = dbCursor.fetchone()
-      if(beachData != None):
-        rainGauge = beachData['rain_gauge']
-        if(rainGauge != None):
-          #Query the rainfall totals over the given hours range. 
-          #Get the last 24 hours summary
-          sum24 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 24)
-          #Get the last 48 hours summary
-          sum48 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 48)
-          #Get the last 72 hours summary
-          sum72 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 72)
-          #Get the last 96 hours summary
-          sum96 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 96)
-          #Get the last 120 hours summary
-          sum120 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 120)
-          #Get the last 144 hours summary
-          sum144 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 144)
-          #Get the last 168 hours summary
-          sum168 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 168)
-          #calculate the X day delay totals
-          #1 day delay
-          sum1daydelay = sum48 - sum24
-          #2 day delay
-          sum2daydelay = sum72 - sum48
-          #3 day delay
-          sum3daydelay = sum96 - sum72
-          
-          #Get the preceding dry days count, if there are any.
-          dryCnt = self.getPrecedingDryDaysCount(datetime, rainGauge)
-          
-          #Get the 24 hour rainfall intensity
-          rainfallIntensity = self.calcRainfallIntensity(rainGauge, datetime, 10)
-                  
-          #Write the summary table
-          etcoc = - 1
-          if(beachData['etcoc'] != None and beachData['etcoc'] != ''):
-            etcoc = int(beachData['etcoc'])
-          salinity = - 1
-          if(beachData['salinity'] != None and beachData['salinity'] != ''):
-            salinity = int(beachData['salinity'])
-          tide = - 1
-          if(datetime == '2002-05-16T09:50:00' or datetime == '2002-05-19T08:49:00'):
-            i = 0
-          if(beachData['tide'] != None and beachData['tide'] != ''):
-            tide = int(beachData['tide'])
-          if(tide == - 1):
-            tide = self.getTideLevel(8661070, datetime)
-          weather = - 1
-          if(beachData['weather'] != None and beachData['weather'] != ''):
-            weather = beachData['weather']
-          
-          #rainfall = 0.0
-          #if( beachData['rainfall'] != None and beachData != '' ):
-          #  rainfall = beachData['rainfall']
-          moon = self.getMoonPhase(datetime)  
-          sql = "INSERT INTO station_summary \
-                (date,station,rain_gauge,etcoc,salinity,tide,moon_phase,weather, \
-                rain_summary_24,rain_summary_48,rain_summary_72,rain_summary_96,rain_summary_120,rain_summary_144,rain_summary_168, \
-                rain_total_one_day_delay,rain_total_two_day_delay,rain_total_three_day_delay,\
-                preceding_dry_day_count,inspection_type,rainfall_intensity_24 ) \
-                VALUES('%s','%s','%s',%d,%d,%d,%.2f,%d, \
-                        %.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f, \
-                        %.2f,%.2f,%.2f,\
-                        %d,'%s',%.2f )" % \
-                (datetime, station, rainGauge, etcoc, salinity, tide, moon, weather,
-                  sum24, sum48, sum72, sum96, sum120, sum144, sum168,
-                  sum1daydelay, sum2daydelay, sum3daydelay,
-                  dryCnt, beachData['insp_type'], rainfallIntensity)
-          dbCursor.execute(sql)
-          #self.dbCon.commit()
-          if(self.logger != None):
-            self.logger.info("Adding summary for station: %s date: %s." % (station, datetime))
-          else:
-            print("Adding summary for station: %s date: %s." % (station, datetime))
-        return(True)
-      else:
-        if(self.logger != None):
-          self.logger.info("No data for station: %s date: %s. SQL: %s" % (station, datetime, sql))
-        else:
-          print("No data for station: %s date: %s. SQL: %s" % (station, datetime, sql))
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-        
-    except Exception, e:
-      if(self.logger != None):
-        self.logger.critical(str(e) + ' Terminating script.')
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-      sys.exit(- 1)
-    
-    return(False)
-  
-  def getLastNHoursSummaryFromPrecipSummary(self, datetime, rain_gauge, prevHourCnt):
-    platformHandle = 'dhec.%s.raingauge' % (rain_gauge)
-    mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation_accumulated_daily', 'in',platformHandle,1)
-    sql = "SELECT SUM(m_value) \
-           FROM multi_obs \
-           WHERE\
-             m_date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
-             m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime('%s') ) AND\
-             m_type_id = %d AND\
-             platform_handle = '%s'"\
-             % (datetime, prevHourCnt, datetime,mTypeID,platformHandle)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      sum = dbCursor.fetchone()[0]
-      if(sum != None):
-        return(float(sum))      
-    
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-    return(- 1.0)
-
-  def getLastNHoursSummary(self, datetime, rain_gauge, prevHourCnt):
-    platformHandle = 'dhec.%s.raingauge' % (rain_gauge)
-    mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation', 'in',platformHandle,1)
-    sql = "SELECT SUM(m_value) \
-           FROM multi_obs \
-           WHERE\
-             m_date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
-             m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime('%s') ) AND\
-             m_type_id = %d AND\
-             platform_handle = '%s'"\
-             % (datetime, prevHourCnt, datetime,mTypeID,platformHandle)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      sum = dbCursor.fetchone()[0]
-      if(sum != None):
-        return(float(sum))      
-    
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-    return(- 1.0)
-  """
-  Function: getPrecedingDryDaysCount
-  Purpose: For the given date, this function calculates how many days previous had no rainfall, if any.
-  Parameters: 
-    datetime is the datetime we are looking for
-    rainGauge is the rain  gauge we are query the rainfall summary for.
-  """
-  def getPrecedingDryDaysCount(self, datetime, rainGauge):
-    iDryCnt = 0
-    secondsInDay = 24 * 60 * 60
-    platformHandle = "dhec.%s.raingauge" %(rainGauge)
-    mTypeID = xeniaSQLite.getMTypeFromObsName(self,"precipitation_accumulated_daily","in",platformHandle,1)
-    sql = "Select A.m_date, A.row_id,  A.m_value, "\
-          "Case "\
-          "When A.m_value= 0  Then "\
-              "IFNULL( (Select Max(B.row_id) From multi_obs As B WHERE B.row_id < A.row_id AND B.m_value=0   ), "\
-                       "(A.row_id) ) "\
-                         "End As grp "\
-          "FROM multi_obs As A WHERE "\
-          "m_date <= strftime('%%Y-%%m-%%dT23:59:00', datetime('%s', '-2 day') ) AND "\
-          "m_type_id = %d AND "\
-          "platform_handle = '%s' "\
-          "ORDER BY datetime(m_date) DESC;"\
-          %(datetime,mTypeID,platformHandle)          
-    dbCursor = xeniaSQLite.executeQuery(self,sql)
-    if(dbCursor != None):    
-      #We subtract off a day since when we are looking for the summaries we start on -1 day from the date provided.
-      t1 = time.mktime(time.strptime(datetime, '%Y-%m-%dT%H:%M:00')) - secondsInDay
-      for row in dbCursor:
-        if(row['grp'] != None):
-          t2 = time.mktime(time.strptime(row['m_date'], '%Y-%m-%dT%H:%M:00'))         
-          #We have to make sure the data points are 1 day apart, according the thesis if we are missing
-          #a data point, we don't calculate the preceding dry days.
-          if((t1 - t2) <= secondsInDay):
-            iDryCnt += 1
-            t1 = t2
-          else:
-            iDryCnt = -1
-            break
-        else:
-          break
-    else:
-      iDryCnt = -1
-    return(iDryCnt)
-  """
-  Function: calcRainfallIntensity
-  Purpose: 2.  Rainfall Intensity- calculated on a per day basis as the total rain per day in inches divided 
-  by the total amount of time in minutes over which that rain fell.  
-  This was calculated by dividing the 24-hour total rainfall by the number of 10 minute increments in the day 
-  with recorded rain multiplied by ten----[Total Rain/(# increments with rain *10)]
-  Parameters:
-    rainGauge is the name of the rain gauge we are investigating.
-    date is the end date/time of where we want to start getting the rainfall data. We search back 1 day from this date.
-    minutes is the number of minutes we want to collect rainfall for.
-  """
-  def calcRainfallIntensity(self, rainGauge, date, minutes):
-    rainfallIntensity = -1
-    platformHandle = 'dhec.%s.raingauge' % (rainGauge)
-    mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation', 'in',platformHandle,1)
-    
-    #Get the entries where there was rainfall for the date, going forward the minutes number of minutes. 
-    sql = "SELECT m_value from multi_obs \
-            WHERE \
-            m_date >= strftime('%%Y-%%m-%%d', datetime('%s','-1 day') ) AND m_date < strftime('%%Y-%%m-%%d', datetime('%s') ) AND\
-            m_type_id = %d AND\
-            platform_handle = '%s';"\
-            % (date, date, mTypeID, platformHandle)
-    """              
-    sql = "SELECT rainfall from precipitation \
-            WHERE rain_gauge = '%s' AND \
-            date >= strftime('%%Y-%%m-%%d', datetime('%s','-1 day') ) AND date < strftime('%%Y-%%m-%%d', datetime('%s') );" \     
-   % (rainGauge, date, date)
-   """
-    dbCursor =  xeniaSQLite.executeQuery(sql)
-    if(dbCursor != None):
-      totalRainfall = 0
-      numRainEntries = 0    
-      hasData = False  
-      for row in dbCursor:
-        rainfall = float(row['m_value'])
-        hasData = True
-        if(rainfall > 0.0):
-          totalRainfall += rainfall
-          numRainEntries += 1
-      
-      #We want to check to make sure we have data from our query, if we do, let's zero out rainfallIntesity.
-      #Otherwise we want to leave it at -1 to denote we had no data for that time.
-      if(hasData == True):
-        rainfallIntensity = 0.0
-          
-      if(numRainEntries):  
-        rainfallIntensity = totalRainfall / (numRainEntries * 10)
-    else:    
-      self.logger.error("%s Function: %s Line: %s File: %s" % (self.lastErrorMsg,self.lastErrorFunc, self.lastErrorLineNo, self.LastErrorFile))            
-    return(rainfallIntensity)
-  
-  def getTideLevel(self, tideStationID, date):
-    tideLevel = - 1
-    #0 is Full stage, either Ebb or Flood, 100 is 1/4, 200 is 1/2 and 300 is 3/4. Below we add either
-    #the 2000 for flood or 4000 for ebb.
-    tideStages = [0, 100, 200, 300]
-    sql = "SELECT date,level,level_code FROM daily_tide_range \
-            WHERE station_id = %d AND ( date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s', '-12 hours') AND \
-            date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s', '12 hours') ) \
-            ORDER BY date ASC" % (tideStationID, date, date) 
-    try:
-      epochT1 = time.mktime(time.strptime(date, '%Y-%m-%dT%H:%M:%S'))
-      prevTime = - 1.0
-      curTime = - 1.0
-      prevRow = []
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      for row in dbCursor:
-        curTime = time.mktime(time.strptime(row['date'], '%Y-%m-%dT%H:%M:%S'))
-        if(prevTime != - 1.0):
-          if((epochT1 >= prevTime) and 
-              (epochT1 < curTime)):
-              #Figure out if the tide is in Ebb or Flood
-              tideState = - 1
-              prevLevel = float(prevRow['level'])
-              curLevel = float(row['level'])
-              if(prevLevel < curLevel):
-                tideState = 2000
-              else:
-                tideState = 4000
-              #Now figure out if it is 0, 1/4, 1/2, 3/4 stage. We divide the time between the 2 tide changes
-              #up into 4 pieces, then figure out where our query time falls.
-              totalTime = curTime - prevTime
-              qtrTime = totalTime / 4.0
-              tidePos = - 1
-              
-              for i in range(0, 4):
-                if((epochT1 >= prevTime) and
-                    (epochT1 < (prevTime + qtrTime))):
-                   tidePost = i
-                   tideLevel = tideState + tideStages[i]
-                   return(tideLevel)
-                   
-                prevTime += qtrTime
-        prevRow = row
-        prevTime = curTime
-                
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-    return(tideLevel)
-  """
-  Function: getPlatforms
-  Purpose: Returns the platforms(rain gauges, monitoring stations) from the platforms table
-  """
-  def getPlatforms(self,where=""):
-    try:
-      sql = "SELECT * from platform %s;" %(where) 
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      return(dbCursor)
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):      
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-        
-    return(None)
-  """
-  Function: getRainGauges
-  Purpose: Returns the rain gauges from the platforms table
-  """
-  def getRainGauges(self, active=None):
-    try:
-      whereClause = '';
-      if(active != None):
-        whereClause = " AND active=%d" % (active)
-      sql = "SELECT * from platform WHERE platform_handle LIKE '%%raingauge%%' %s" % (whereClause)
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      return(dbCursor)
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-    return(None)
-  
-  """
-  Function: getLastXMRGDate
-  Purpose: Returns the last date collected for radar data.
-  Parameters:
-  Return: String with the last date, or None if nothing found.
-  """
-  def getLastXMRGDate(self):
-    try:
-      sql = "SELECT max(collection_date) AS date FROM precipitation_radar"
-      dbCursor = self.executeQuery(sql)
-      if(dbCursor != None):
-        row = dbCursor.fetchone()
-        if(row != None):
-          return(row['date'])
-    except Exception, E:
-      self.logger.error(str(E) + ' Terminating script')
-      sys.exit(- 1)
-    return(None)
- 
-  """
-  Function: cleanPrecipRadar
-  Purpose: This function will remove all data older the olderThanDate from the precipitation_radar table.
-  Parameters:
-    olderThanDate is the comparison date to use.
-  Return: 
-    True if successful, otherwise False.
-  """
-  def cleanPrecipRadar(self, olderThanDate):
-    sql = "DELETE FROM precipitation_radar WHERE collection_date < strftime('%%Y-%%m-%%dT%%H:%%M:%%S', '%s');" % (olderThanDate)
-    dbCursor = self.executeQuery(sql)
-    if(dbCursor != None):
-      try:
-        self.DB.commit()
-        return(True)  
-      except sqlite3.Error, e:
-        self.rowErrorCnt += 1
-        if(self.logger != None):
-          self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-        else:
-          print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-        
-    return(False)  
-  """
-  Function: cleanIOOSData
-  Purpose: Deletes IOOS data from the database that is older than the number of days we want to keep, set in the
-    parameter NDaysToKeep.
-  Parameters:
-    NDaysToKeep is the number of days we want to remain in the database.
-  """
-  def cleanIOOSData(self, NDaysToKeep):
-    sql = "DELETE FROM multi_obs WHERE m_date < datetime('now', '-%d days') AND platform_handle NOT LIKE '%dhec%';"
-    dbCursor = self.executeQuery(sql)
-    if(dbCursor != None):
-      try:
-        self.DB.commit()
-        return(True)  
-      except sqlite3.Error, e:
-        if(self.logger != None):
-          self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-        else:
-          print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-        return(False)
-    return(None)
-  """
-  Function: getRadarDataForBoundary
-  Purpose: For the given rain gauge(boundaryName), this function will return the radar data that is in that POLYGON.
-  """
-  def getRadarDataForBoundary(self, boundaryName,strtTime,endTime):
-    sql = "SELECT latitude,longitude,precipitation FROM precipitation_radar \
-            WHERE\
-            collection_date >= '%s' AND collection_date < '%s'\
-            Intersects( Geom, \
-                        (SELECT Geometry FROM boundaries WHERE AOI ='%s'))"\
-            %(strtTime,endTime,boundaryName)
-    return(self.executeQuery(self,sql))
-  
-  """
-  Function: calculateWeightedAvg
-  Purpose: For a given station(rain gauge) this function queries the radar data, gets the grids that fall
-   into the watershed of interest and calculates the weighted average.
-  Parameters:
-    watershedName is the watershed we want to calculate the average for. For ease of use, I use the rain gauge name to 
-       name the watersheds.
-    startTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
-    endTime is the starting time in YYYY-MM-DDTHH:MM:SS format.
-  """
-  def calculateWeightedAvg(self, watershedName, startTime, endTime):
-    weighted_avg = -1.0
-    #Get the percentages that the intersecting radar grid make up of the watershed boundary.      
-    sql = "SELECT * FROM(\
-           SELECT (Area(Intersection(radar.geom,bounds.Geometry))/Area(bounds.Geometry)) as percent,\
-                   radar.precipitation as precipitation\
-           FROM precipitation_radar radar, boundaries bounds\
-           WHERE radar.collection_date >= '%s' AND radar.collection_date <= '%s' AND\
-                bounds.AOI = '%s' AND\
-                Intersects(radar.geom, bounds.geometry))"\
-                %(startTime,endTime,watershedName)
-    dbCursor = self.executeQuery(sql)        
-    if(dbCursor != None):
-      total = 0.0
-      date = ''
-      cnt = 0
-      for row in dbCursor:
-        percent = row['percent']
-        precip = row['precipitation']
-        total += (percent * precip)
-        cnt += 1
-      dbCursor.close()
-      if(cnt > 0):
-        weighted_avg = total
-    else:
-      weighted_avg = None
-    return(weighted_avg)
 ################################################################################################################  
 class dhecConfigSettings(xmlConfigFile):
   def __init__(self, xmlConfigFilename):
@@ -1521,127 +893,126 @@ class processDHECRainGauges:
       msg = self.procTraceback()
       self.logger.critical(msg)      
       sys.exit(-1)
+
+  def importBacteriaData(self, bacteriaFilename, addStationSummary=False):
+    try:
+      inDataFile = open(bacteriaFilename, "r")
+      row = 0
+      #Get the stations we want to process.
+      dbCursor = self.db.getPlatforms("WHERE platform_handle LIKE '%monitorstation%'")
+      if(dbCursor == None):
+        self.logger.error("No stations returned, cannot continue.")
+        sys.exit(-1)
+      stationList = []
+      for platform in dbCursor:
+        stationList.append(platform['short_name'])
       
+      self.logger.debug("Beginning import of file: %s" %(bacteriaFilename))      
+      line = inDataFile.readline()
+      while(len(line)):
+        if( row == 0):
+          header = line
+        else:
+          line = line.split(',')
+          if(len(line) < 13):
+            print("Not enough columns: %d in row: %d, skipping." %(len(line), row))
+            continue
+          colCnt = 0
+          #THe column structure in the file is the following:
+          #LIMS Number,Station,Inspection Date,Insp Time,Lab Number,Inspection Type,E Sign,ETCOC,Salinity,Rainfall,Tide,Wind/Curr,Weather
+
+          #Strings in the file are all quoted, so we use the .lstrip() and .rstrip to get rid of the quotes
+          lims = (line[0].lstrip("\"")).rstrip("\"")          
+          station = (line[1].lstrip("\"")).rstrip("\"")
+          if(station in stationList):
+            date = (line[2].lstrip("\"")).rstrip("\"")
+            #time is in military time, for example 12:00 is represented 1200.
+            mtime = (line[3].lstrip("\"")).rstrip("\"")
+            date = time.strptime(date, "%d-%b-%Y")
+            date = time.strftime("%Y-%m-%d", date)
+            
+            lab = (line[4].lstrip("\"")).rstrip("\"")
+            inspType = (line[5].lstrip("\"")).rstrip("\"")
+            esign = (line[6].lstrip("\"")).rstrip("\"")
+            etcoc = (line[7].lstrip("\"")).rstrip("\"")
+            if(len(etcoc) == 0):
+              etcoc = 'NULL'
+            salinity = (line[8].lstrip("\"")).rstrip("\"")
+            if(len(salinity) == 0):
+              salinity = 'NULL'
+            rain = (line[9].lstrip("\"")).rstrip("\"")
+            if(len(rain) == 0):
+              rain = 'NULL'
+            tide = (line[10].lstrip("\"")).rstrip("\"")
+            wind = (line[12].lstrip("\"")).rstrip("\n").rstrip("\"")
+            wind = (wind.lstrip("'")).rstrip("'")
+            if(len(wind) == 0):
+              wind = 'NULL'
+            weather = (line[12].lstrip("\"")).rstrip("\n").rstrip("\"")
+            weather = (weather.lstrip("'")).rstrip("'")
+            if(len(weather) == 0):
+              weather = 'NULL'
+            self.logger.debug("Saving station: %s Date/Time: %s %s" %(station, date, mtime))
+            sql = "INSERT INTO dhec_beach\
+                   (lims_number,station,insp_date,insp_time,lab_number,insp_type,e_sign,etcoc,salinity,rainfall,tide,wind_curr,weather)\
+                   VALUES('%s','%s','%s','%s','%s','%s','%s',%s,%s,%s,'%s',%s,%s)"\
+                   %(lims, station, date, mtime, lab, inspType, esign, etcoc, salinity, rain, tide, wind, weather)
+            dbCursor = self.db.executeQuery(sql)
+            if(dbCursor != None):
+              self.db.commit()
+              dbCursor.close()
+            #Log error
+            else:
+              self.logger.critical("%s" %(self.db.getErrorInfo()))          
+            if(addStationSummary):
+              self.db.writeSummaryForStation(date, mtime, station, False)
+        row += 1
+        line = inDataFile.readline()
+        
+      self.logger.debug("Processed: %d lines from the file: %s" %(row,bacteriaFilename))
+      if(addStationSummary):
+        self.db.commit()
+    except Exception, e:
+      self.logger.critical("Error: ", exc_info=1)
+      return(False)
+    return(True)
 ################################################################################################################  
 
-def convertSensorsToXeniaDB(dhecData, addSensors, copyData):
-  try:
-    #Get the rain gauges and monitoring stations.
-    sql = "SELECT * FROM platforms"
-    platformsCursor = dhecData.db.executeQuery(sql)
-    for platform in platformsCursor:
-      name = platform['name']
-      name = name.lstrip()
-      name = name.rstrip()
-      if(addSensors):
-        platformInfo = {}
-        sensorList = []
-        orgInfo = {}
-        orgInfo['short_name'] = 'dhec'
-        orgInfo['description'] = "South Carolina Department of Heath and Environmental Control"
-        platformInfo['short_name'] = name
-        if(int(platform['type']) == 1):
-          doSomething = True
-          platformInfo['platform_handle'] = "dhec.%s.raingauge" % (name)
-          sensorInfo = {}
-          sensorInfo['m_type'] = '66'
-          sensorInfo['short_name'] = 'precipitation'
-          sensorInfo['uom'] = 'in'
-          sensorList.append(sensorInfo)
-          sensorInfo = {}
-          sensorInfo['short_name'] = 'precipitation_accumulated_daily'
-          sensorInfo['uom'] = 'in'
-          sensorList.append(sensorInfo)
-          if(name == 'mb2' or name == 'mb3'):
-            sensorInfo = {}
-            sensorInfo['short_name'] = 'wind_speed'
-            sensorInfo['uom'] = 'mph'
-            sensorList.append(sensorInfo)
-            sensorInfo = {}
-            sensorInfo['short_name'] = 'wind_from_direction'
-            sensorInfo['uom'] = 'degrees_true'
-            sensorList.append(sensorInfo)          
-        else:
-          platformInfo['platform_handle'] = "dhec.%s.monitorstation" % (name)
-          
-        platformInfo['fixed_latitude'] = platform['latitude']
-        platformInfo['fixed_longitude'] = platform['longitude']
-        platformInfo['description'] = platform['description']
-        platformInfo['active'] = int(platform['active'])
-        dhecData.checkForPlatformAndSensor(orgInfo, platformInfo, sensorList, True)
-      
-      if(copyData and int(platform['type'])):
-        platformHandle = "dhec.%s.raingauge" % (name)
-        print("Processing: %s" % (platformHandle))
-        #Now query the current data for the rain gauge and move it to the multi_obs table.
-        sql = "SELECT * FROM precipitation WHERE rain_gauge = '%s' ORDER BY date ASC" % (platform['name'])
-        dataCursor = dhecData.db.executeQuery(sql)
-        rowCnt = 0
-        for data in dataCursor:
-          mVals = []
-          mVals.append(float(data['rainfall']))
-          if(data['batt_voltage'] != None):
-            mVals.append(float(data['batt_voltage']))
-          if(data['program_code'] != None):
-            mVals.append(float(data['program_code']))
-                                       
-          if(dhecData.db.addMeasurement('precipitation', 'in',
-                                     platformHandle,
-                                     data['date'],
-                                     platform['latitude'], platform['longitude'],
-                                     0,
-                                     mVals,
-                                     1,
-                                     False) == True):
-            #print( "Added precipitation: %f(in) Voltage: %f ProgramCode: %f to Platform: %s Date: %s" %(float(data['rainfall']),float(data['batt_voltage']),float(data['program_code']),platformInfo['platform_handle'],data['date'] ) )
-            rowCnt += 1
-          else:
-            print(("%s Function: %s Line: %s File: %s" % (dhecData.db.lastErrorMsg, dhecData.db.lastErrorFunc, dhecData.db.lastErrorLineNo, dhecData.db.lastErrorFile)))
-        if(rowCnt):
-          print("Queued for commit for platform: %s Rows: %d" % (platformHandle, rowCnt))
-          dataCursor.close()
-        sql = "SELECT * FROM precip_daily_summary WHERE rain_gauge = '%s' ORDER BY date ASC" % (platform['name'])
-        dataCursor2 = dhecData.db.executeQuery(sql)
-        rowCnt = 0
-        for data in dataCursor2:
-          mVals = []
-          mVals.append(float(data['rainfall']))                                    
-          if(dhecData.db.addMeasurement('precipitation_accumulated_daily', 'in',
-                                     platformHandle,
-                                     data['date'],
-                                     platform['latitude'], platform['longitude'],
-                                     0,
-                                     mVals,
-                                     1,
-                                     False) == True):
-            #print( "Added precipitation_accumulated_daily: %f(in) to Platform: %s Date: %s" %(float(data['rainfall']),platformInfo['platform_handle'],data['date'] ) )
-            rowCnt += 1
-          else:
-            print(("%s Function: %s Line: %s File: %s" % (dhecData.db.lastErrorMsg, dhecData.db.lastErrorFunc, dhecData.db.lastErrorLineNo, dhecData.db.lastErrorFile)))
-        
-        if(rowCnt):
-          print("Queued for commit for platform: %s Rows: %d" % (platformHandle, rowCnt))
-          dataCursor2.close()
-    if(dhecData.db.commit() != True):
-      print(("%s Function: %s Line: %s File: %s" % (dhecData.db.lastErrorMsg, dhecData.db.lastErrorFunc, dhecData.db.lastErrorLineNo, dhecData.db.lastErrorFile)))
-          
-  except Exception, e:
-    import sys
-    import traceback
-    
-    info = sys.exc_info()        
-    excNfo = traceback.extract_tb(info[2], 1)
-    items = excNfo[0]
-    lastErrorFile = items[0]    
-    lastErrorLineNo = items[1]    
-    lastErrorFunc = items[2]        
-    print("%s Function: %s Line: %s File: %s" % (str(e), lastErrorFunc, lastErrorLineNo, lastErrorFile)) 
-    sys.exit(- 1)
 if __name__ == '__main__':
-  if(len(sys.argv) < 2):
-    print("Usage: xmrgFile.py xmlconfigfile")
-    sys.exit(- 1)    
+  try:
+    import psyco
+    psyco.full()
+        
+    parser = optparse.OptionParser()
+    parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
+                      help="Configuration file." )
+    parser.add_option("-t", "--TideFilePath", dest="tideFilePath",
+                      help="Import a tide file from the given filepath." )
+    parser.add_option("-b", "--BacteriaDataFile", dest="bacteriaDataFile",
+                      help="Import a csv bacteria file from the given filepath." )
+    parser.add_option("-s", "--AddStationSummaryEntry", dest="addStationSummaryEntry", action= 'store_true',
+                      help="While importing a bacteria file, this flag specifies to create a station summary entry also." )
+    (options, args) = parser.parse_args()
+    if( options.xmlConfigFile == None ):
+      parser.print_usage()
+      parser.print_help()
+      sys.exit(-1)
 
-  dhecData = processDHECRainGauges(sys.argv[1])
+    dhecData = processDHECRainGauges(options.xmlConfigFile)
+    
+    if(options.tideFilePath != None and len(options.tideFilePath)):
+      dhecData.db.importTideFile(options.tideFilePath)
+    
+    elif(options.bacteriaDataFile != None and len(options.bacteriaDataFile)):
+      addSummary = False
+      if(options.addStationSummaryEntry != None and options.addStationSummaryEntry):
+        addSummary = True
+      dhecData.importBacteriaData(options.bacteriaDataFile, addSummary)
+      
+      
+  except Exception, E:
+    import traceback
+    print( traceback.print_exc() )
+    
   
   

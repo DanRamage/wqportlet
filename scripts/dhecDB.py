@@ -202,23 +202,23 @@ class dhecDB(xeniaSQLite):
       sys.exit(- 1)
     return(dateList)
   """
-  Function: getMoonPhase
-  Purpose: For the given day, return the moon phase(percentage of moon visible).
+  Function: getMoonIllumination
+  Purpose: For the given day, return the moon illumination(percentage of moon visible).
   Parameters:
     date is the day of interest
   Return:
     a floating point number representing the percentage of moon visible
   """
-  def getMoonPhase(self, date):
+  def getMoonIllumination(self, date):
     moonPhase = -9999.0
     sql = "SELECT phase FROM moon_phase WHERE date = strftime( '%%Y-%%m-%%d','%s')" % (date)
     try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      val = dbCursor.fetchone()
-      if(val['phase'] != None):
-        moonPhase = float(val['phase'])
-
+      dbCursor = self.executeQuery(sql)
+      if(dbCursor != None):
+        val = dbCursor.fetchone()
+        if(val != None):
+          if(val['phase'] != None):
+            moonPhase = float(val['phase'])
     except sqlite3.Error, e:
       self.rowErrorCnt += 1
       if(self.logger != None):
@@ -233,127 +233,243 @@ class dhecDB(xeniaSQLite):
   Function: writeSummaryForStation
   Purpose:  Writes the entry for day into the summary table. 
   Parameters:
-    datetime is the date for the summary
-    station is the name of the station we are quering the dates for.
+    sampleDate is the date in the dhec_beach table which is when the sample was taken.
+    sampleTime is the date in th edhec_beach table when the sample was taken.
+    station is the name of the station we are quering the dates for. 
   Return: A list of the dates. If none were found, the list is empty. 
+  
   """
-  def writeSummaryForStation(self, datetime, station):
+  def writeSummaryForStation(self, sampleDate, sampleTime, station, commit=True):
     #import datetime
     
-    sql = "SELECT  dhec_beach.station,dhec_beach.insp_type,dhec_beach.etcoc,dhec_beach.tide,dhec_beach.salinity,dhec_beach.weather,monitoring_stations.rain_gauge,precip_daily_summary.rainfall \
-          FROM dhec_beach,monitoring_stations,precip_daily_summary \
+    sql = "SELECT  dhec_beach.station,dhec_beach.insp_type,dhec_beach.etcoc,dhec_beach.tide,dhec_beach.salinity,dhec_beach.weather,\
+          monitoring_stations.rain_gauge\
+          FROM dhec_beach,monitoring_stations \
           WHERE \
-          dhec_beach.station = monitoring_stations.station AND \
-          monitoring_stations.rain_gauge = precip_daily_summary.rain_gauge AND \
+          monitoring_stations.station = '%s' AND \
           dhec_beach.station = '%s' AND \
-          dhec_beach.insp_date = strftime('%%Y-%%m-%%d', datetime('%s') ) and \
-          precip_daily_summary.date = strftime('%%Y-%%m-%%dT23:59:00',datetime('%s'))" % (station, datetime, datetime)
+          dhec_beach.insp_date = strftime('%%Y-%%m-%%d', '%s' ) AND\
+          dhec_beach.insp_time = '%s'"\
+          % (station, station, sampleDate, sampleTime)
     try:
       dbCursor = self.DB.cursor()
       dbCursor.execute(sql)
       beachData = dbCursor.fetchone()
+      
+      #Build the datetime used to query the other tables. The sampleDate and sampleTime are in
+      #EST so we also convert over to UTC.
+      sampleTime = int(sampleTime)
+      hour = sampleTime / 100;
+      minute = sampleTime - (hour * 100) # Get the minutes                    
+      estDatetime = "%sT%02d:%02d:00" %(sampleDate, hour, minute)
+      datetime = estDatetime
+      dataEpochTime = time.mktime(time.strptime(datetime, '%Y-%m-%dT%H:%M:%S'))
+      datetime = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(dataEpochTime))
       if(beachData != None):
         rainGauge = beachData['rain_gauge']
         if(rainGauge != None):
+          if(datetime == '2009-12-31T16:25:00' and station == 'WAC-005A'):
+            stop = 1
           #Query the rainfall totals over the given hours range. 
           #Get the last 24 hours summary
           sum24 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 24)
+          if(sum24 == -9999.0):
+            sum24 = 'NULL'
           #Get the last 48 hours summary
           sum48 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 48)
+          if(sum48 == -9999.0):
+            sum48 = 'NULL'
           #Get the last 72 hours summary
           sum72 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 72)
+          if(sum72 == -9999.0):
+            sum72 = 'NULL'
           #Get the last 96 hours summary
           sum96 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 96)
+          if(sum96 == -9999.0):
+            sum96 = 'NULL'
           #Get the last 120 hours summary
           sum120 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 120)
+          if(sum120 == -9999.0):
+            sum120 = 'NULL'
           #Get the last 144 hours summary
           sum144 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 144)
+          if(sum144 == -9999.0):
+            sum144 = 'NULL'
           #Get the last 168 hours summary
           sum168 = self.getLastNHoursSummaryFromPrecipSummary(datetime, rainGauge, 168)
+          if(sum168 == -9999.0):
+            sum168 = 'NULL'
           #calculate the X day delay totals
           #1 day delay
-          sum1daydelay = sum48 - sum24
+          sum1daydelay = 'NULL'
+          if(sum24 != 'NULL' and sum48 != 'NULL'):
+            sum1daydelay = str(sum48 - sum24)
           #2 day delay
-          sum2daydelay = sum72 - sum48
+          sum2daydelay = 'NULL'
+          if(sum72 != 'NULL' and sum48 != 'NULL'):
+            sum2daydelay = str(sum72 - sum48)
           #3 day delay
-          sum3daydelay = sum96 - sum72
+          sum3daydelay = 'NULL'
+          if(sum72 != 'NULL' and sum96 != 'NULL'):
+            sum3daydelay = str(sum96 - sum72)
+          #Now convert the values to strings. We use strings in the SQL call so we can use 'NULL' for values we don't have.
+          sum24 = str(sum24)
+          sum48 = str(sum48)
+          sum72 = str(sum72)
+          sum96 = str(sum96)
+          sum120 = str(sum120)
+          sum144 = str(sum144)
+          sum168 = str(sum168)
           
           #Get the preceding dry days count, if there are any.
           dryCnt = self.getPrecedingDryDaysCount(datetime, rainGauge)
-          
+          if(dryCnt == -9999):
+            dryCnt = 'NULL'
+          else:
+            dryCnt = str(dryCnt)
           #Get the 24 hour rainfall intensity
           rainfallIntensity = self.calcRainfallIntensity(rainGauge, datetime, 10)
+          if(rainfallIntensity == -9999.0):
+            rainfallIntensity = 'NULL'
+          else:
+            rainfallIntensity = str(rainfallIntensity)
                   
           #Write the summary table
-          etcoc = -9999
+          etcoc = 'NULL'
           if(beachData['etcoc'] != None and beachData['etcoc'] != ''):
-            etcoc = int(beachData['etcoc'])
-          salinity = -9999
+            etcoc = str(beachData['etcoc'])
+          salinity = 'NULL'
           if(beachData['salinity'] != None and beachData['salinity'] != ''):
-            salinity = int(beachData['salinity'])
-          tide = -9999
+            salinity = str(beachData['salinity'])
+          tide = 'NULL'
           if(beachData['tide'] != None and beachData['tide'] != ''):
-            tide = int(beachData['tide'])
-          if(tide == -9999):
+            tide = str(beachData['tide'])
+          if(tide == 'NULL'):
             tide = self.getTideLevel(8661070, datetime)
-          weather = -9999
+            if(tide == -9999):
+              tide = 'NULL'
+            else:
+              tide = str(tide)
+          weather = 'NULL'
           if(beachData['weather'] != None and beachData['weather'] != ''):
-            weather = beachData['weather']
+            weather = str(beachData['weather'])
           
-          #rainfall = 0.0
-          #if( beachData['rainfall'] != None and beachData != '' ):
-          #  rainfall = beachData['rainfall']
-          moon = self.getMoonPhase(datetime)  
-          
+          #We use the sampleDate for the moon illumination since the dates are in EST in the table.
+          moon = self.getMoonIllumination(sampleDate)  
+          if(moon == -9999.0):
+            moon = 'NULL'
+          else:
+            moon = str(moon)
+         
           
           #Query the rainfall totals over the given hours range. 
           #Get the last 24 hours summary
-          radarSum24 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 24)
+          radarSum24 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 24)
+          if(radarSum24 == -9999.0):
+            radarSum24 = 'NULL'
           #Get the last 48 hours summary
-          radarSum48 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 48)
+          radarSum48 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 48)
+          if(radarSum48 == -9999.0):
+            radarSum48 = 'NULL'
           #Get the last 72 hours summary
-          radarSum72 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 72)
+          radarSum72 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 72)
+          if(radarSum72 == -9999.0):
+            radarSum72 = 'NULL'
           #Get the last 96 hours summary
-          radarSum96 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 96)
+          radarSum96 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 96)
+          if(radarSum96 == -9999.0):
+            radarSum96 = 'NULL'
           #Get the last 120 hours summary
-          radarSum120 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 120)
+          radarSum120 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 120)
+          if(radarSum120 == -9999.0):
+            radarSum120 = 'NULL'
           #Get the last 144 hours summary
-          radarSum144 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 144)
+          radarSum144 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 144)
+          if(radarSum144 == -9999.0):
+            radarSum144 = 'NULL'
           #Get the last 168 hours summary
-          radarSum168 = dhecData.db.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 168)
+          radarSum168 = self.getLastNHoursSummaryFromRadarPrecip(datetime, rainGauge, 168)
+          if(radarSum168 == -9999.0):
+            radarSum168 = 'NULL'
       
-          radarIntensity = dhecData.db.calcRadarRainfallIntensity( rainGauge, datetime, 60)
-          if(radarSum24 == -9999):
-            radarIntensity = -9999
+          radarIntensity = self.calcRadarRainfallIntensity( rainGauge, datetime, 60)
+          if(radarSum24 == 'NULL' or radarIntensity == -9999):
+            radarIntensity = 'NULL'
+          else:
+            radarIntensity = str(radarIntensity)
           
-          radarDryCnt = -9999
-          if(radarSum24 != None):
-            if(radarSum24 != -9999):
-              radarDryCnt = dhecData.db.getPrecedingRadarDryDaysCount(datetime, rainGauge)
+          radarDryCnt = 'NULL'
+          if(radarSum24 != 'NULL'):
+            radarDryCnt = self.getPrecedingRadarDryDaysCount(datetime, rainGauge)
+            if(radarDryCnt == -9999):
+              radarDryCnt = 'NULL'
+            else:
+              radarDryCnt = str(radarDryCnt)
           
           #calculate the X day delay totals
           #1 day delay
-          radarsum1daydelay = -9999.0
-          if(radarSum48 != -9999.0 and radarSum24 != -9999.0):
-            radarsum1daydelay = sum48 - sum24
+          radarsum1daydelay = 'NULL'
+          if(radarSum48 != 'NULL' and radarSum24 != 'NULL'):
+            radarsum1daydelay = str(radarSum48 - radarSum24)
           #2 day delay
-          radarsum2daydelay = -9999.0
-          if(radarSum72 != -9999.0 and radarSum48 != -9999.0):
-            radarsum2daydelay = radarSum72 - radarSum48
+          radarsum2daydelay = 'NULL'
+          if(radarSum72 != 'NULL' and radarSum48 != 'NULL'):
+            radarsum2daydelay = str(radarSum72 - radarSum48)
           #3 day delay
-          radarsum3daydelay = -9999.0
-          if(radarSum96 != -9999.0 and radarSum72 != -9999.0):
-            radarsum3daydelay = radarSum96 - radarSum72
+          radarsum3daydelay = 'NULL'
+          if(radarSum96 != 'NULL' and radarSum72 != 'NULL'):
+            radarsum3daydelay = str(radarSum96 - radarSum72)
+           
+          radarSum24 = str(radarSum24)      
+          radarSum48 = str(radarSum48)      
+          radarSum72 = str(radarSum72)      
+          radarSum96 = str(radarSum96)      
+          radarSum120 = str(radarSum120)      
+          radarSum144 = str(radarSum144)      
+          radarSum168 = str(radarSum168)      
                 
-          avgWindSpdSUN2 = dhecData.db.getAvgWindSpeed('carocoops.SUN2.buoy', datetime)
-          avgWindDirSUN2,cardPtSUN2 = dhecData.db.getAvgWindDirection('carocoops.SUN2.buoy', datetime)
-          avgSalinitySUN2 = dhecData.db.getAvgSalinity('carocoops.SUN2.buoy', datetime)
-          avgWaterTempSUN2 = dhecData.db.getAvgWaterTemp('carocoops.SUN2.buoy', datetime)
-      
-          avgWindSpdNOS = dhecData.db.getAvgWindSpeed('nos.8661070.WL', datetime)
-          avgWindDirNOS,cardPtNOS = dhecData.db.getAvgWindDirection('nos.8661070.WL', datetime)
-          avgWaterTempNOS = dhecData.db.getAvgWaterTemp('nos.8661070.WL', datetime)
-          avgWaterLevelNOS = dhecData.db.getAvgWaterLevel('nos.8661070.WL', datetime)
+                
+          avgWindSpdSUN2 = self.getAvgWindSpeed('carocoops.SUN2.buoy', datetime)
+          if(avgWindSpdSUN2 == -9999):
+            avgWindSpdSUN2 = 'NULL'
+          else:
+            avgWindSpdSUN2 = "%.3f"%(avgWindSpdSUN2)
+          avgWindDirSUN2,cardPtSUN2 = self.getAvgWindDirection('carocoops.SUN2.buoy', datetime)
+          if(avgWindDirSUN2 == -9999):
+            avgWindDirSUN2 = 'NULL'
+          else:
+            avgWindDirSUN2 = "%.3f"%(avgWindDirSUN2)
+          avgSalinitySUN2 = self.getAvgSalinity('carocoops.SUN2.buoy', datetime)
+          if(avgSalinitySUN2 == -9999):
+            avgSalinitySUN2 = 'NULL'
+          else:
+            avgSalinitySUN2 = "%.3f"%(avgSalinitySUN2)
+          avgWaterTempSUN2 = self.getAvgWaterTemp('carocoops.SUN2.buoy', datetime)
+          if(avgWaterTempSUN2 == -9999):
+            avgWaterTempSUN2 = 'NULL'
+          else: 
+            avgWaterTempSUN2 = "%.3f"%(avgWaterTempSUN2)
+          avgWindSpdNOS = self.getAvgWindSpeed('nos.8661070.WL', datetime)
+          if(avgWindSpdNOS == -9999):
+            avgWindSpdNOS = 'NULL'
+          else:
+            avgWindSpdNOS = "%.3f"%(avgWindSpdNOS)
+            
+          avgWindDirNOS,cardPtNOS = self.getAvgWindDirection('nos.8661070.WL', datetime)
+          if(avgWindDirNOS == -9999):
+            avgWindDirNOS = 'NULL'
+          else:
+            avgWindDirNOS = "%.3f"%(avgWindDirNOS)
+          avgWaterTempNOS = self.getAvgWaterTemp('nos.8661070.WL', datetime)
+          if(avgWaterTempNOS == -9999):
+            avgWaterTempNOS = 'NULL'
+          else:
+            avgWaterTempNOS = "%.3f"%(avgWaterTempNOS)
+          avgWaterLevelNOS = self.getAvgWaterLevel('nos.8661070.WL', datetime)
+          if(avgWaterLevelNOS == -9999):
+            avgWaterLevelNOS = 'NULL'
+          else:
+            avgWaterLevelNOS = "%.3f"%(avgWaterLevelNOS)
           
           sql = "INSERT INTO station_summary \
                 (date,station,rain_gauge,etcoc,salinity,tide,moon_phase,weather, \
@@ -364,39 +480,43 @@ class dhecDB(xeniaSQLite):
                 radar_rain_summary_168,radar_rain_total_one_day_delay,radar_rain_total_two_day_delay,radar_rain_total_three_day_delay,radar_preceding_dry_day_cnt,\
                 radar_rainfall_intensity_24,sun2_wind_speed,sun2_wind_dir,sun2_water_temp,sun2_salinity,nos8661070_wind_spd,nos8661070_wind_dir,\
                 nos8661070_water_temp,nos8661070_water_level ) \
-                VALUES('%s','%s','%s',%d,%d,%d,%.2f,%d, \
-                        %.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f, \
-                        %.2f,%.2f,%.2f,\
-                        %d,'%s',%.2f,\
-                        %f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d,%f,%f'%s',%f,%f,%f,'%s',%f,%f )" % \
-                (datetime, station, rainGauge, etcoc, salinity, tide, moon, weather,
+                VALUES('%s','%s','%s',%s,%s,%s,%s,%s, \
+                        %s,%s,%s,%s,%s,%s,%s, \
+                        %s,%s,%s,\
+                        %s,'%s',%s,\
+                        %s,%s,%s,%s,%s,%s,%s,\
+                        %s,%s,%s,%s,%s,\
+                        %s,'%s',%s,%s,\
+                        %s,'%s',%s,%s )" % \
+                (estDatetime, station, rainGauge, etcoc, salinity, tide, moon, weather,
                   sum24, sum48, sum72, sum96, sum120, sum144, sum168,
                   sum1daydelay, sum2daydelay, sum3daydelay,
                   dryCnt, beachData['insp_type'], rainfallIntensity,
-                  sum24,sum48,sum72,sum96,sum120,sum144,sum168,sum1daydelay,sum2daydelay,sum3daydelay,dryCnt,intensity,
-                  avgWindSpdSUN2,cardPtSUN2,avgWaterTempSUN2,avgSalinitySUN2,avgWindSpdNOS,cardPtNOS,avgWaterTempNOS,avgWaterLevelNOS)
-          dbCursor.execute(sql)
-          #self.dbCon.commit()
-          if(self.logger != None):
-            self.logger.info("Adding summary for station: %s date: %s." % (station, datetime))
+                  radarSum24,radarSum48,radarSum72,radarSum96,radarSum120,radarSum144,radarSum168,
+                  radarsum1daydelay,radarsum2daydelay,radarsum2daydelay,radarDryCnt,radarIntensity,
+                  avgWindSpdSUN2,cardPtSUN2,avgWaterTempSUN2,avgSalinitySUN2,
+                  avgWindSpdNOS,cardPtNOS,avgWaterTempNOS,avgWaterLevelNOS)
+          dbCursor = self.executeQuery(sql)
+          if(dbCursor != None):
+            if(commit):
+              self.commit()
+            if(self.logger != None):
+              self.logger.info("Adding summary for station: %s date: %s." % (station, estDatetime))
+            else:
+              print("Adding summary for station: %s date: %s." % (station, estDatetime))
+            dbCursor.close()
           else:
-            print("Adding summary for station: %s date: %s." % (station, datetime))
+            self.logger.error(self.getErrorInfo())
         return(True)
       else:
         if(self.logger != None):
-          self.logger.info("No data for station: %s date: %s. SQL: %s" % (station, datetime, sql))
+          self.logger.info("No data for station: %s date: %s. SQL: %s" % (station, estDatetime, sql))
         else:
-          print("No data for station: %s date: %s. SQL: %s" % (station, datetime, sql))
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
+          print("No data for station: %s date: %s. SQL: %s" % (station, estDatetime, sql))
         
     except Exception, e:
       if(self.logger != None):
-        self.logger.critical(str(e) + ' Terminating script.')
+        self.logger.critical(str(e) + ' Terminating script.', exc_info=1)
       else:
         print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
       sys.exit(-1)
@@ -408,7 +528,7 @@ class dhecDB(xeniaSQLite):
            FROM multi_obs \
            WHERE\
              m_date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
-             m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime('%s') ) AND\
+             m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s' ) AND\
              m_type_id = %d AND\
              platform_handle = '%s'"\
              % (datetime, prevHourCnt, datetime,mTypeID,platformHandle)
@@ -440,30 +560,6 @@ class dhecDB(xeniaSQLite):
     mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation_accumulated_daily', 'in',platformHandle,1)
     sum = self.getLastNHoursPrecipSummary(datetime, mTypeID, platformHandle, prevHourCnt)
     return(sum)
-    """
-    sql = "SELECT SUM(m_value) \
-           FROM multi_obs \
-           WHERE\
-             m_date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
-             m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime('%s') ) AND\
-             m_type_id = %d AND\
-             platform_handle = '%s'"\
-             % (datetime, prevHourCnt, datetime,mTypeID,platformHandle)
-    try:
-      dbCursor = self.DB.cursor()
-      dbCursor.execute(sql)
-      sum = dbCursor.fetchone()[0]
-      if(sum != None):
-        return(float(sum))      
-    
-    except sqlite3.Error, e:
-      self.rowErrorCnt += 1
-      if(self.logger != None):
-        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
-      else:
-        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
-    return(- 1.0)
-    """
   """
   Function: getLastNHoursSummaryFromRadarPrecipSummary
   Purpose: Calculate the rainfall summary for the past N hours for a given rain_gauge/radar.
@@ -787,7 +883,32 @@ class dhecDB(xeniaSQLite):
       else:
         print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
     return(None)
-  
+  """
+  Function: getRainGaugeForStation
+  Purpose: For the given station name, returns the associated rain gauge.
+  Parameters: stationName is the string representing the station. 
+  Returns: If none found, then an empty string is returned, if an error occured
+    None is returned.
+  """
+  def getRainGaugeForStation(self, stationName):
+    try:
+      rainGauge = ''
+      sql = "SELECT rain_gauge FROM monitoring_stations WHERE station='%s';"\
+            %(stationName)
+      dbCursor = self.executeQuery(sql)
+      if(dbCursor != None):
+        row = dbCursor.fetchone()
+        if(row != None):
+          rainGauge = row['rain_gauge']
+        dbCursor.close()
+      return(rainGauge)
+    except sqlite3.Error, e:
+      self.rowErrorCnt += 1
+      if(self.logger != None):
+        self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
+      else:
+        print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
+    return(None)
   """
   Function: getLastXMRGDate
   Purpose: Returns the last date collected for radar data.
@@ -909,6 +1030,8 @@ class dhecDB(xeniaSQLite):
     tideFilePath is the fully qualified path the the file to import.
   """
   def importTideFile(self,tideFilePath):
+    from dhecRainGaugeProcessing import processTideData
+    
     tideFile = processTideData()
     tideFile.openFile(tideFilePath)
     stationID, date, level, tideType = tideFile.readLine()
