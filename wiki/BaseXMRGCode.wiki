@@ -45,3 +45,10 @@ Command line parameters:
     * --StoreDryPrecipCells If set, when importing the XMRG file, cells that had precipitation of 0 will be stored in the database. Storing the dry cells has the potential to make the database quite large depending on the area the BBOX covers.
     * --Polygon Polygon of interest to use for querying against the radar data. The fomrat starts with the bottom left longitude and latitude, then continues around the polygon with the last longitude latitude pair once again being the bottom left.
  
+
+== The Code ==
+The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py xmrgFile.py] file contains two main objects and a couple of container objects.
+  * xmrgFile is the object that handles reading an XMRG file.
+  * xmrgDB is the object that handles the reads/writes from the database.
+  * hrapCoord is a simple object that represents a HRAP grid coordinate.
+  * LatLong is a simple latitude/longitude object.
