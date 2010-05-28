@@ -55,83 +55,83 @@ The [http://code.google.com/p/wqportlet/source/browse/trunk/scripts/xmrgFile.py 
   
   === xmrgFile Object ===
   These are the member functions in the object.
-  * __init__(loggerName=None)
-    Purpose: Initalizes the class.
-    Parameters: None
-    Return: None
+  * *__init__(loggerName=None)*
+    _Purpose:_ Initalizes the class.
+    _Parameters:_ None
+    _Return:_ None
 
-  * Reset()
-  Purpose: Prepares the xmrgFile object for reuse. Resets various variables and closes  the currently open file object.
-  Parameters: None
-  Return: None
+  * *Reset()*
+  _Purpose:_ Prepares the xmrgFile object for reuse. Resets various variables and closes  the currently open file object.
+  _Parameters:_ None
+  _Return:_ None
   
-  * openFile(filePath)
-  Purpose: Attempts to open the file given in the filePath string. If the file is compressed using gzip, this will uncompress
+  * *openFile(filePath)*
+  _Purpose:_ Attempts to open the file given in the filePath string. If the file is compressed using gzip, this will uncompress
     the file as well.
-  Parameters:
+  _Parameters:_
     filePath is a string with the full path to the file to open.
-  Return:
+  _Return:_
     True if successful, otherwise False. If an error occured, it will be stored in self.lastErrorMsg
 
-  * cleanUp(deleteFile,deleteCompressedFile)
- Purpose: Called to delete the XMRG file that was just worked with. Can delete the uncompressed file and/or 
+  * *cleanUp(deleteFile,deleteCompressedFile)*
+ _Purpose:_ Called to delete the XMRG file that was just worked with. Can delete the uncompressed file and/or 
   the source compressed file. 
- Parameters:
+ _Parameters:_
    deleteFile if True, will delete the unzipped binary file.
    deleteCompressedFile if True, will delete the compressed file the working file was extracted from.
 
-  * readFileHeader()
-  Purpose: For the open file, reads the header. Call this function first before attempting to use readRow or readAllRows.
+  * *readFileHeader()*
+  _Purpose:_ For the open file, reads the header. Call this function first before attempting to use readRow or readAllRows.
     If you don't the file pointer will not be at the correct position.
-  Parameters: None
-  Returns: True if successful, otherwise False.
+  _Parameters:_ None
+  _Returns:_ True if successful, otherwise False.
 
-  * readRecordTag()
-  Purpose: Reads the tag that surrounds each record in the file.
-  Parameters: None
-  Return: An integer dataArray with the tag data if read, otherwise None.
+  * *readRecordTag()*
+  _Purpose:_ Reads the tag that surrounds each record in the file.
+  _Parameters:_ None
+  _Return:_ An integer dataArray with the tag data if read, otherwise None.
 
-  * readRow()
-  Purpose: Reads a single row from the file.
-  Parameters: None'
-  Returns: If successful a dataArray containing the row values, otherwise None.
+  * *readRow()*
+  _Purpose:_ Reads a single row from the file.
+  _Parameters:_ None'
+  _Returns:_ If successful a dataArray containing the row values, otherwise None.
 
-  * readAllRows()
-  Purpose: Reads all the rows in the file and stores them in a dataArray object. Data is stored in self.grid.
-  Parameters: None
-  Returns: True if succesful otherwise False.
+  * *readAllRows()*
+  _Purpose:_ Reads all the rows in the file and stores them in a dataArray object. Data is stored in self.grid.
+  _Parameters:_ None
+  _Returns:_ True if succesful otherwise False.
 
-  * inBBOX(hrapPoint)
-  Purpose: Tests to see if the testLatLong is in the bounding box given by minLatLong and maxLatLong.
-  Parameters:
+  * *inBBOX(hrapPoint)*
+  _Purpose:_ Tests to see if the testLatLong is in the bounding box given by minLatLong and maxLatLong.
+  _Parameters:_
     testLatLong is the lat/long pair we are testing.
     minLatLong is a latLong object representing the bottom left corner.
     maxLatLong is a latLong object representing the upper right corner.
-  Returns:
+  _Returns:_
     True if the testLatLong is in the bounding box, otherwise False.
 
-  * hrapCoordToLatLong(hrapPoint)
-  Purpose: Converts the HRAP grid point given in hrapPoint into a latitude and longitude.
-  Parameters:  
+  * *hrapCoordToLatLong(hrapPoint)*
+  _Purpose:_ Converts the HRAP grid point given in hrapPoint into a latitude and longitude.
+  _Parameters:_
     hrapPoint is an hrapPoint object that defines the row,col point we are converting.
-  Returns:
+  _Returns:_
     A LatLong() object with the converted data.
 
-  * latLongToHRAP(latLong, roundToNearest=False, adjustToOrigin=False)
-  Purpose: Converts a latitude and longitude into an HRAP grid point.
-  Parameters:  
+  * *latLongToHRAP(latLong, roundToNearest=False, adjustToOrigin=False)*
+  _Purpose:_ Converts a latitude and longitude into an HRAP grid point.
+  _Parameters:_  
     latLong is an latLong object that defines the point we are converting.
     roundToNearest specifies if we want to round the hrap point to the nearest integer value.
     adjustToOrigin specifies if we want to adjust the hrap point to the origin of the file.
-  Returns:
+  _Returns:_
     A LatLong() object with the converted data.
 
-  * biLinearInterpolatePoint(x, y, z0, z1, z2, z3)
+  * *biLinearInterpolatePoint(x, y, z0, z1, z2, z3)*
 
-  * getCollectionDateFromFilename(fileName)
-  Purpose: Given the filename, this will return a datetime string in the format of YYYY-MM-DDTHH:MM:SS.
-  Parameters:
+  * _getCollectionDateFromFilename(fileName)_
+  _Purpose:_ Given the filename, this will return a datetime string in the format of YYYY-MM-DDTHH:MM:SS.
+  _Parameters:_
     fileName is the xmrg filename to parse the datetime from.
-  Return:
+  _Return:_
     A string representing the date and time in the form: YYYY-MM-DDTHH:MM:SS
   
