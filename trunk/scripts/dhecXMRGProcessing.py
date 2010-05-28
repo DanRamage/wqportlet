@@ -4,9 +4,12 @@ import traceback
 import optparse
 import time
 import re
-sys.path.insert(0, "C:\\Documents and Settings\\dramage\\workspace\\BeachAdvisory") 
-from xmrgFile import xmrgFile,processXMRGData,hrapCoord,LatLong
-from dhecRainGaugeProcessing import dhecDB
+if(sys.platform == "win32"):
+  sys.path.insert(0, "C:\Documents and Settings\dramage\workspace\BeachAdvisory")
+#from xmrgFile import xmrgFile,processXMRGData,hrapCoord,LatLong
+from xmrgFile import xmrgFile,hrapCoord,LatLong
+from processXMRGFile import processXMRGData
+from dhecDB import dhecDB
 from dhecRainGaugeProcessing import processDHECRainGauges
 from xeniatools import getRemoteFiles
 
@@ -109,7 +112,7 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
-        self.logger.error( "Exception occured:", exc_info=1 )
+        self.logger.critical( "Exception occured:", exc_info=1 )
       else:
         print(traceback.print_exc())
 
@@ -124,7 +127,7 @@ class dhecXMRGProcessing(processXMRGData):
       if(importDirectory == None):
         importDirectory = self.importDirectory
       
-      db = dhecDB(self.configSettings.dbSettings['dbName'], self.loggerName)
+      db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
       if(self.logger != None):
         self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
       if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
@@ -161,7 +164,7 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
-        self.logger.error( "Exception occured:", exc_info=1 )
+        self.logger.critical( "Exception occured:", exc_info=1 )
       else:
         print(traceback.print_exc())
       
@@ -170,7 +173,7 @@ class dhecXMRGProcessing(processXMRGData):
       self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True)
 
       #Clean out any data older than xmrgKeepLastNDays.
-      db = dhecDB(self.configSettings.dbSettings['dbName'], self.loggerName)
+      db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
             
       #Current time minus N days worth of seconds.
       timeNHoursAgo = time.time() - ( self.xmrgKeepLastNDays * 24 * 60 * 60 ) 
@@ -224,7 +227,7 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
-        self.logger.error( "Exception occured:", exc_info=1 )
+        self.logger.critical( "Exception occured:", exc_info=1 )
       else:
         print(traceback.print_exc())
     return(None)
@@ -274,7 +277,7 @@ class dhecXMRGProcessing(processXMRGData):
     return(filetime)
   
   def writeShapefile(self, fileName, minLatLong=None, maxLatLong=None):
-    xmrg = xmrgFile( self.loggerName )
+    xmrg = xmrgFile( self.configSettings.loggerName )
     xmrg.openFile( fileName )
     if( xmrg.readFileHeader() ):     
       self.logger.debug( "File Origin: X %d Y: %d Columns: %d Rows: %d" %(xmrg.XOR,xmrg.YOR,xmrg.MAXX,xmrg.MAXY))
@@ -430,7 +433,7 @@ class dhecXMRGProcessing(processXMRGData):
       except Exception, E:
         self.lastErrorMsg = str(E)
         if(self.logger != None):
-          self.logger.error( "Exception occured:", exc_info=1 )
+          self.logger.critical( "Exception occured:", exc_info=1 )
         else:
           print(traceback.print_exc())
         return(False)
@@ -445,14 +448,14 @@ class dhecXMRGProcessing(processXMRGData):
                         %(fileName,minLatLong.latitude,minLatLong.longitude,maxLatLong.latitude,maxLatLong.longitude))
     #Database connection not supplied, so create it.
     if(db == None):
-      db = dhecDB(dbFile, self.loggerName)     
+      db = dhecDB(dbFile, self.configSettings.loggerName)     
       if(self.logger != None):
         self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
       if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
         if(self.logger != None):
           self.logger.debug("Error loading: %s Error: %s" %(self.configSettings.spatiaLiteLib,db.lastErrorMsg))
 
-    xmrg = xmrgFile( self.loggerName )
+    xmrg = xmrgFile( self.configSettings.loggerName )
     xmrg.openFile( fileName )
     
     if( xmrg.readFileHeader() ):     
@@ -550,7 +553,7 @@ class dhecXMRGProcessing(processXMRGData):
       except Exception, E:
         self.lastErrorMsg = str(E)
         if(self.logger != None):
-          self.logger.error( "Exception occured:", exc_info=1 )
+          self.logger.critical( "Exception occured:", exc_info=1 )
         else:
           print(traceback.print_exc())
         return(False)
@@ -627,7 +630,7 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E)
       if(self.logger != None):
-        self.logger.error( "Exception occured:", exc_info=1 )
+        self.logger.critical( "Exception occured:", exc_info=1 )
       else:
         print(self.lastErrorMsg)        
       return(False)
@@ -637,7 +640,7 @@ class dhecXMRGProcessing(processXMRGData):
     if(self.logger != None):
       self.logger.debug("Entering createWatershedSummaries.")
       
-    db = dhecDB(self.configSettings.dbSettings['dbName'], self.loggerName)
+    db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
     if(self.logger != None):
       self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
     if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
