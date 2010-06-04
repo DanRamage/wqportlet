@@ -2,7 +2,16 @@
 
 = Processing an XMRG File =
 
-This page discusses the class object used to open and process and XMRG file from the NEXRAD system.
+This page discusses the class object used to open and process and XMRG file from the NEXRAD system. For the DHEC Beach Advisory system, we download XMRG data files from the Southeast River Forecast Center [http://www.srh.noaa.gov/anonymous/serfc/anon/xmrg/ here]. These are rain gauge corrected NEXRAD files produced hourly. 
+The XMRG file format is described [http://www.nws.noaa.gov/oh/hrl/misc/xmrg.pdf here].
+A description of the HRAP grid that the XMRG files use can be found [http://www.weather.gov/oh/hrl/nwsrfs/users_manual/part2/_pdf/21hrapgrid.pdf here].
+
+A quick overview of the process used for the project:
+1) Download the hourly XMRG file.
+2) Read the file and store the area of interest specified by a bounding box into a spatially enabled database table as a polygon representing the grid block.
+3) Given a polygon for the watershed of interest, query the database table to get the grids that fall inside the watershed boundary.
+4) Compute a weighted average of the precipitation.
+
 
 
 == Required Bits and Pieces ==
