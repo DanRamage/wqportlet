@@ -3,14 +3,7 @@
 Python version required: 2.5
   # [http://codespeak.net/lxml/installation.html lxml]
   # [http://trac.osgeo.org/gdal/wiki/GdalOgrInPython gdal]
-    On my test bed I built the gdal source, then installed into the default
-    directory. In python when calling "from osgeo import gdal" I kept getting
-    an error saying libgdal.so.1 could not be found. Doing an ldd on _gdal.so in the 
-    site-packages dir for the gdal package, I saw that the shared object couldn't be
-    found. Unsure why that was, I tried adding a soft link in a couple of places to 
-    no avail. I ended up editing ld.so.conf and added /usr/local/lib, which is where
-    on Debian the default installation of the gdal libs went. Then ran ldconfig and
-    another ldd _gdal.so showed the library could then be found. I am unsure of where
+    On my test bed I built the gdal source, then installed into the default directory. In python when calling "from osgeo import gdal" I kept getting an error saying libgdal.so.1 could not be found. Doing an ldd on gdal.so in the site-packages dir for the gdal package, I saw that the shared object couldn't be found. Unsure why that was, I tried adding a soft link in a couple of places to no avail. I ended up editing ld.so.conf and added /usr/local/lib, which is where on Debian the default installation of the gdal libs went. Then ran ldconfig and another ldd gdal.so showed the library could then be found. I am unsure of where
     it was looking initally.
   # [http://www.scipy.org/Download numpy]
   # [http://oss.itsystementwicklung.de/trac/pysqlite/wiki/PysqlitePackages pysqlite]
