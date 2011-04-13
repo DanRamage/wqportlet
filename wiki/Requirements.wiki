@@ -1,0 +1,9 @@
+#summary Various requirements for the processing code.
+
+= Introduction =
+
+== Database requirements ==
+  * SQLite
+  * Spatialite
+
+== Python Packages ==
