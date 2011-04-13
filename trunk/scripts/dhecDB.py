@@ -5,6 +5,7 @@ import logging
 import logging.handlers
 from pysqlite2 import dbapi2 as sqlite3
 from xeniatools.xenia import xeniaSQLite
+from xeniatools.astronomicalCalcs import moon
 
 """
 Class: dhecDB
@@ -354,8 +355,11 @@ class dhecDB(xeniaSQLite):
           if(beachData['weather'] != None and beachData['weather'] != ''):
             weather = str(beachData['weather'])
           
+          #Calculate the moon illumination. We want to calculate the illumination in EST at noon.
+          
+          moonCalcs = moon()
           #We use the sampleDate for the moon illumination since the dates are in EST in the table.
-          moon = self.getMoonIllumination(sampleDate)  
+          #moon = self.getMoonIllumination(sampleDate)  
           if(moon == -9999.0):
             moon = 'NULL'
           else:
@@ -523,6 +527,64 @@ class dhecDB(xeniaSQLite):
     
     return(False)
   
+  def createXMRGStats(self, datetime, platformHandle):
+    xmrgData = {}
+    #Query the rainfall totals over the given hours range. 
+    #Get the last 24 hours summary
+    xmrgData['radarSum24'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 24)
+    if(xmrgData['radarSum24'] == -9999.0):
+      xmrgData['radarSum24'] = None
+    #Get the last 48 hours summary
+    xmrgData['radarSum48'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 48)
+    if(xmrgData['radarSum48'] == -9999.0):
+      xmrgData['radarSum48'] = None
+    #Get the last 72 hours summary
+    xmrgData['radarSum72'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 72)
+    if(xmrgData['radarSum72'] == -9999.0):
+      xmrgData['radarSum72'] = None
+    #Get the last 96 hours summary
+    xmrgData['radarSum96'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 96)
+    if(xmrgData['radarSum96'] == -9999.0):
+      xmrgData['radarSum96'] = None
+    #Get the last 120 hours summary
+    xmrgData['radarSum120'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 120)
+    if(xmrgData['radarSum120'] == -9999.0):
+      xmrgData['radarSum120'] = None
+    #Get the last 144 hours summary
+    xmrgData['radarSum144'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 144)
+    if(xmrgData['radarSum144'] == -9999.0):
+      xmrgData['radarSum144'] = None
+    #Get the last 168 hours summary
+    xmrgData['radarSum168'] = self.getLastNHoursSummaryFromRadarPrecip(datetime, platformHandle, 168)
+    if(xmrgData['radarSum168'] == -9999.0):
+      xmrgData['radarSum168'] = None
+  
+    xmrgData['radarIntensity'] = self.calcRadarRainfallIntensity( platformHandle, datetime, 60)
+    if(xmrgData['radarSum24'] == 'NULL' or xmrgData['radarIntensity'] == -9999):
+      xmrgData['radarIntensity'] = None
+    
+    xmrgData['radarDryCnt'] = None
+    if(xmrgData['radarSum24'] != None):
+      xmrgData['radarDryCnt'] = self.getPrecedingRadarDryDaysCount(datetime, platformHandle)
+      if(xmrgData['radarDryCnt'] == -9999):
+        xmrgData['radarDryCnt'] = None
+    
+    #calculate the X day delay totals
+    #1 day delay
+    xmrgData['radarsum1daydelay'] = None
+    if(xmrgData['radarSum48'] != None and xmrgData['radarSum24'] != None):
+      xmrgData['radarsum1daydelay'] = (xmrgData['radarSum48'] - xmrgData['radarSum24'])
+    #2 day delay
+    xmrgData['radarsum2daydelay'] = None
+    if(xmrgData['radarSum72'] != None and xmrgData['radarSum48'] != None):
+      xmrgData['radarsum2daydelay'] = (xmrgData['radarSum72'] - xmrgData['radarSum48'])
+    #3 day delay
+    xmrgData['radarsum3daydelay'] = None
+    if(xmrgData['radarSum96'] != None and xmrgData['radarSum72'] != None):
+      xmrgData['radarsum3daydelay'] = (xmrgData['radarSum96'] - xmrgData['radarSum72'])    
+    
+    return(xmrgData)
+     
   def getLastNHoursPrecipSummary(self, datetime, mTypeID, platformHandle, prevHourCnt):
     sql = "SELECT SUM(m_value) \
            FROM multi_obs \
@@ -788,6 +850,7 @@ class dhecDB(xeniaSQLite):
   """
   Function: getTideLevel
   Purpose: For the given tide station and date, this retrieves the tidal information.
+  Tide data is MLLW at local time, daily Hi/Lo tide points.
   Parameters: 
     tideStationID is the station to retrieve the data from.
     date is the date to retrieve.
