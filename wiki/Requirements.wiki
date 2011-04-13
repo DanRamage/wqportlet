@@ -4,7 +4,7 @@
 
 == Database requirements ==
   * SQLite
-    [http://www.sqlite.org/download.html Download]
+    [http://www.sqlite.org/download.html Download] It is import to note that when building the SQLite libraries the configure parameter --enable-dynamic-extensions be used. The spatialite library is an extension that we load into the sqlite space.
   * Spatialite
     [http://www.gaia-gis.it/spatialite/ Download] The requirements are also listed on this page. Notes on the building of the library can be found [http://code.google.com/p/xenia/wiki/SpatialLite here].
    
