@@ -13,8 +13,6 @@ from dhecDB import dhecDB
 from dhecRainGaugeProcessing import processDHECRainGauges
 from xeniatools import getRemoteFiles
 
-import osgeo.ogr
-import osgeo.osr
 
 class baseExportClass(object):   
   def openOutputFile(self,filename,fileDir):
@@ -277,6 +275,9 @@ class dhecXMRGProcessing(processXMRGData):
     return(filetime)
   
   def writeShapefile(self, fileName, minLatLong=None, maxLatLong=None):
+    import osgeo.ogr
+    import osgeo.osr
+  
     xmrg = xmrgFile( self.configSettings.loggerName )
     xmrg.openFile( fileName )
     if( xmrg.readFileHeader() ):     
