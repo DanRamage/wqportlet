@@ -6,7 +6,7 @@
   * SQLite
     [http://www.sqlite.org/download.html Download]
   * Spatialite
-    [http://www.gaia-gis.it/spatialite/ Download] The requirements are also listed on this page.
+    [http://www.gaia-gis.it/spatialite/ Download] The requirements are also listed on this page. Notes on the building of the library can be found [http://code.google.com/p/xenia/wiki/SpatialLite here].
    
 
 == Python Packages ==
