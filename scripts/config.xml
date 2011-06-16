@@ -4,33 +4,52 @@
     <remoteDir></remoteDir>
     <fileNameFilter>xmrg</fileNameFilter>
     <downloadDir>c:\temp\nws_precip\xmrgfiles\</downloadDir>
+  
+    <processingSettings>
+      <bbox>32.8,-81.1;34,-77.8</bbox>
+      <!--<bbox>33.5,-79.1;34.0,-78.5</bbox>-->
+      <keepLastNDays>3</keepLastNDays>
+      <backfillLastNDays>1</backfillLastNDays>
+      <saveAllPrecipVals>0</saveAllPrecipVals>
+      <createPolygonsFromGrid>1</createPolygonsFromGrid>
+      <writeToDB>1</writeToDB>
+      <writeToShapefile>0</writeToShapefile>
+      <shapeFileDir></shapeFileDir>
+      <deleteCompressedSourceFile>0</deleteCompressedSourceFile>
+      <deleteSourceFile>0</deleteSourceFile>
+      <importDirectory></importDirectory>
+      <calculateWeightedAverage>1</calculateWeightedAverage>
+      <summaryDirectory>c:/temp/</summaryDirectory>
+    </processingSettings>
+    
     <fetchLogging>
       <use>1</use>
       <checkModDate>0</checkModDate>
-      <logDir>c:\temp\nws_precip\xmrgfiles\fetchlogs\</logDir>
+      <logDir></logDir>
     </fetchLogging>    
   </xmrgData>
+  
   <logging>    
     <logMsgs>1</logMsgs>
     <maxBytes>1000000</maxBytes>
     <backupCount>5</backupCount>
-    <logDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\dhec.log</logDir>
+    <logDir></logDir>
   </logging>
 
   <database>
     <db>
       <type>sqlite</type>
-      <name>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\scripts\TestBed\production\dhec.db</name>
-      <spatiaLiteLib>libspatialite-2.dll</spatiaLiteLib>
+      <name></name>
+      <spatiaLiteLib></spatiaLiteLib>
       <backup>
-        <filePath>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\</filePath>
+        <filePath></filePath>
+        <sqlSchemaFile></sqlSchemaFile>
       </backup>
     </db>
   </database>
   
-  <rainGaugeProcessing>
-    
-    <rainGaugeFileDir>C:\Documents and Settings\dramage\workspace\SVNSandbox\wqportlet\trunk\data\raingauge\NewFiles\</rainGaugeFileDir>
+  <rainGaugeProcessing>    
+    <rainGaugeFileDir></rainGaugeFileDir>
     <ftp>
       <user></user>
       <passwd></passwd>
@@ -40,85 +59,448 @@
     </ftp>
     <outputs>
       <kml>
-        <filePath>C:\Documents and Settings\dramage\workspace\BeachAdvisory\rainGaugeLatest.kml</filePath>
+        <filePath></filePath>
       </kml>
     </outputs>
     <alert>
-      <lagTimeAlert>1</lagTimeAlert>
-      <emailList>dan@inlet.geol.sc.edu,dan@inlet.geol.sc.edu</emailList>
-    </alert>
-    <rainGaugeList>      
-      <rainGauge>
-        <name>nmb1</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>101</fileID>
-        <file24hrSumId>102</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>nmb2</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>111</fileID>
-        <file24hrSumId>112</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>nmb3</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>121</fileID>
-        <file24hrSumId>122</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>mb1</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>131</fileID>
-        <file24hrSumId>132</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>mb2</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID></fileID>
-        <file24hrSumId></file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>mb3</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>151</fileID>
-        <file24hrSumId>152</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>mb4</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>161</fileID>
-        <file24hrSumId>162</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>surfside</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>171</fileID>
-        <file24hrSumId>172</file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>gardencity</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID></fileID>
-        <file24hrSumId></file24hrSumId>
-      </rainGauge>
-      <rainGauge>
-        <name>murrellsinlet</name>
-        <type></type>
-        <phoneNumber></phoneNumber>
-        <fileID>191</fileID>
-        <file24hrSumId>192</file24hrSumId>
-      </rainGauge>      
-    </rainGaugeList>
-    
+      <lagTimeAlert></lagTimeAlert>
+      <emailList></emailList>
+    </alert>    
   </rainGaugeProcessing>
+  <!--
+  This section deals with the automated testing.
+  -->
+  <stationTesting>
+    <logConfigFile></logConfigFile>
+    <database>
+      <obsDatabase>
+        <type></type>
+        <name></name>
+        <user></user>
+        <pwd></pwd>
+        <host></host>        
+      </obsDatabase>
+      <nexradDatabase>
+        <type></type>
+        <name></name>
+        <spatiaLiteLib></spatiaLiteLib>      
+      </nexradDatabase>
+    </database>
+    
+    <results>
+      <emailSettings>
+        <server></server>
+        <from></from>
+        <pwd></pwd>
+        <emailList>
+          <email></email>
+        </emailList>
+      </emailSettings>
+      <mapOutput>
+        <kmlFilePath></kmlFilePath>
+      </mapOutput>
+    </results>
+    
+    <watersheds>
+      <watershed id="NMB2">
+        <intercept>2.33567</intercept>
+        <regressionFormula>
+<![CDATA[%(intercept)f + %(station_coefficient)f + (0.0186 * %(radar_preceeding_dry_day_cnt)f) + (0.07688 * %(range)f) + (0.02093 * %(sun2_water_temp)f) + (-0.06697 * %(sun2_salinity)f) + (0.6453 * %(nos8661070_water_level)f)]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[
+cartPrediction = predictionLevels.LOW
+]]>
+        </cartModel>        
+        <testObject>wqDataNMB2</testObject>        
+        <stations>
+          <station id="WAC-004">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-005">
+            <coefficient>0.16961</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-005A">
+            <coefficient>0.01255</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-006">
+            <coefficient>0.0894</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-007">
+            <coefficient>0.0692</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+      
+      <watershed id="NMB3">
+        <intercept>-3.03042</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + %(station_coefficient)f + (0.23658 * %(radar_rain_summary_48)f) + (0.06467 * %(range)f) + (0.10374 * %(sun2_salinity)f)          
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[
+if(%(range)f < 7.365):
+  cartPrediction  = predictionLevels.LOW
+else:
+  cartPrediction  = predictionLevels.MEDIUM
+]]>
+        </cartModel>
+        <testObject>wqDataNMB3</testObject>                
+        <stations>
+          <station id="WAC-008">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-009">
+            <coefficient>0.06456</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-009A">
+            <coefficient>0.30321</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-010">
+            <coefficient>0.16897</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-011">
+            <coefficient>0.01198</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+      
+      <watershed id="MB1">
+        <intercept>-0.66188</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + %(station_coefficient)f + (0.26372 * %(radar_rain_summary_48)f) + (0.04697 * %(sun2_salinity)f) + (0.73344 * %(nos8661070_water_level)f)
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[
+if('%(station)s' == "WAC-012" or '%(station)s' == "WAC-013" or '%(station)s' == "WAC-014"):
+  cartPrediction = predictionLevels.LOW
+elif('%(station)s' == "WAC-015" or '%(station)s' == "WAC-015A" or '%(station)s' == "WAC-016"):
+  if(%(radar_rain_summary_48)f < 1.540455):
+    if(%(radar_rain_summary_48)f < 0.477393):
+      cartPrediction = predictionLevels.LOW
+    else:
+      if(%(radar_rain_summary_144)f >= 1.155841):
+        if(%(lowFt)f < 1.055):
+          cartPrediction = predictionLevels.LOW
+        else:
+          cartPrediction = predictionLevels.HIGH        
+      else:
+        cartPrediction = predictionLevels.MEDIUM
+  else:
+    cartPrediction = predictionLevels.MEDIUM
+else:
+  cartPrediction = predictionLevels.NO_TEST
+  
+]]>
+        </cartModel>
+        <testObject>wqDataMB1</testObject>                        
+        <stations>
+          <station id="WAC-012">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-013">
+            <coefficient>0.00245</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-014">
+            <coefficient>0.04359</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-015">
+            <coefficient>0.42819</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-015A">
+            <coefficient>0.61380</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-016">
+            <coefficient>0.23534</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+      
+      <watershed id="MB2">
+        <intercept>-3.33625</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + (0.13767 * %(radar_rain_summary_24)f) + (0.13382 * %(sun2_salinity)f) + (2.06091 * %(nos8661070_water_level)f)
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[ 
+if('%(nos8661070_wind_dir)s' == "S" or '%(nos8661070_wind_dir)s' == "SE" or '%(nos8661070_wind_dir)s' == "SW"):
+  if(%(radar_preceeding_dry_day_cnt)f < 8):
+    cartPrediction = predictionLevels.LOW
+  else:
+    cartPrediction = predictionLevels.MEDIUM
+elif('%(nos8661070_wind_dir)s' == "E" or '%(nos8661070_wind_dir)s' == "W"):
+  if(%(radar_rain_summary_24)f >= 0.434523):
+    cartPrediction = predictionLevels.MEDIUM
+  else:
+    cartPrediction = predictionLevels.HIGH
+else:
+  cartPrediction = predictionLevels.NO_TEST
+
+]]>
+        </cartModel>
+        <testObject>wqDataMB2</testObject>                                
+        <stations>
+          <station id="WAC-016A">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-017">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-017A">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-018">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-019">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+      
+      <watershed id="MB3">
+        <intercept>1.07952</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + %(station_coefficient)f + (0.29459 * %(radar_rain_summary_48)f) + (0.08891 * %(radar_preceeding_dry_day_cnt)f) + (-1.25943 * %(nos8661070_water_level)f)
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[ 
+if(%(radar_rain_summary_24)f < 0.2856365):
+  if(%(sun2_wind_speed)f >= 6.171706):
+    cartPrediction = predictionLevels.LOW
+  else:
+    if('%(station)s' == "WAC-020" or '%(station)s' == "WAC-021"):
+      cartPrediction = predictionLevels.LOW
+    elif('%(station)s' == "WAC-022A"):
+      cartPrediction = predictionLevels.MEDIUM
+    else:
+      cartPrediction = predictionLevels.NO_TEST
+else:
+  if('%(station)s' == "WAC-020" or '%(station)s' == "WAC-021"):
+    cartPrediction = predictionLevels.LOW
+  elif('%(station)s' == "WAC-022A"):
+    if('%(sun2_wind_dir)s' == "SW" or '%(sun2_wind_dir)s' == "W"):
+      cartPrediction = predictionLevels.LOW
+    elif('%(sun2_wind_dir)s' == "E" or '%(sun2_wind_dir)s' == "S" or '%(sun2_wind_dir)s' == "SE"):
+      cartPrediction = predictionLevels.HIGH
+    else:
+      cartPrediction = predictionLevels.NO_TEST
+  else:
+    cartPrediction = predictionLevels.NO_TEST
+]]>
+        </cartModel>
+        <testObject>wqDataMB3</testObject>                                        
+        <stations>
+          <station id="WAC-020">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-021">
+            <coefficient>-0.14824</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-022">
+            <coefficient>0.45929</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+
+      <watershed id="MB4">
+        <intercept>-0.35041</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + %(station_coefficient)f + (0.11733 * %(radar_rain_summary_48)f) + (0.13834 * %(range)f) + (0.03048 * %(sun2_water_temp)f + (1.50149 * %(nos8661070_water_level)f))
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[ 
+if(%(highFt)f < 6.625):
+  if('%(station)s' == "WAC-024" or '%(station)s' == "WAC-026" or '%(station)s' == "WAC-027"):
+    cartPrediction = predictionLevels.LOW
+  elif('%(station)s' == "WAC-025A"):
+    if('%(sun2_wind_dir)s' == "E" or '%(sun2_wind_dir)s' == "NW" or '%(sun2_wind_dir)s' == "S" or '%(sun2_wind_dir)s' == "SW" or '%(sun2_wind_dir)s' == "W"):
+      cartPrediction = predictionLevels.LOW
+    elif('%(sun2_wind_dir)s' == "NE" or '%(sun2_wind_dir)s' == "SE"):
+      cartPrediction = predictionLevels.MEDIUM
+    else:
+      cartPrediction = predictionLevels.NO_TEST
+  else:
+    cartPrediction = predictionLevels.NO_TEST
+else:
+  if(%(sun2_salinity)f < 34.95265):
+    cartPrediction = predictionLevels.LOW
+  else:
+    cartPrediction = predictionLevels.MEDIUM  
+]]>
+        </cartModel>
+        <testObject>wqDataMB4</testObject>                                                
+        <stations>
+          <station id="WAC-024">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-025A">
+            <coefficient>0.52189</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-026">
+            <coefficient>-0.04849</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-027">
+            <coefficient>-0.17322</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+
+      <watershed id="Surfside">
+        <intercept>3.9066132</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + %(station_coefficient)f + (0.8922087 * %(radar_rain_summary_24)f) + (0.0357181 * %(sun2_water_temp)f) + (-0.0987670 * %(sun2_salinity)f) + (0.0003973 * %(nos8661070_water_temp)f)
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[
+if(%(radar_rain_summary_24)f < 1.184481):
+  if('%(station)s' == "WAC-029" or '%(station)s' == "WAC-029A" or '%(station)s' == "WAC-030" or '%(station)s' == "WAC-031" or '%(station)s' == "WAC-031A" or '%(station)s' == "WAC-032"):
+    cartPrediction = predictionLevels.LOW
+  elif('%(station)s' == "WAC-028"):
+    if(%(radar_rainfall_intensity_24)f < 0.0022765):
+      if(%(lowFt)f < 0.16):
+        cartPrediction = predictionLevels.LOW
+      else:
+        if(%(nos8661070_water_temp)f >= 48.50743):
+          cartPrediction = predictionLevels.LOW
+        else:
+          if(%(radar_rainfall_intensity_24)f >= 0.00033):
+            cartPrediction = predictionLevels.MEDIUM
+          else:
+            cartPrediction = predictionLevels.LOW
+    else:
+      cartPrediction = predictionLevels.MEDIUM
+  else:
+    cartPrediction = predictionLevels.NO_TEST
+else:
+  cartPrediction = predictionLevels.HIGH
+]]>
+        </cartModel>
+        <testObject>wqDataSS</testObject>                                                        
+        <stations>
+          <station id="WAC-028">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-029">
+            <coefficient>-0.3749033</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-029A">
+            <coefficient>-0.2505888</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-030">
+            <coefficient>-0.4598894</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-031">
+            <coefficient>-0.3737392</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-031A">
+            <coefficient>-0.1991229</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-032">
+            <coefficient>-0.4814569</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+
+      <watershed id="Gardcty">
+        <intercept>-4.02875</intercept>
+        <regressionFormula>
+<![CDATA[
+%(intercept)f + %(station_coefficient)f + (0.12632 * %(radar_rain_summary_48)f) + (0.03282 * %(radar_preceeding_dry_day_cnt)f) + (0.07451 * %(range)f) + (0.13864 * %(sun2_salinity)f) + (1.55037 * %(nos8661070_water_level)f)
+]]>
+        </regressionFormula>
+        <cartModel>
+<![CDATA[
+if(%(sun2_salinity)f < 35.15796):
+  cartPrediction = predictionLevels.LOW
+else:
+  if(%(highFt)f < 6.64):
+    if('%(station)s' == "WAC-034" or '%(station)s' == "WAC-036" or '%(station)s' == "WAC-037"):
+      cartPrediction = predictionLevels.LOW
+    elif('%(station)s' == "WAC-033" or '%(station)s' == "WAC-035"):
+      if(%(range)f >= 5.305):
+        cartPrediction = predictionLevels.LOW
+      else:
+        cartPrediction = predictionLevels.MEDIUM
+    else:
+      cartPrediction = predictionLevels.NO_TEST
+  else:
+    cartPrediction = predictionLevels.MEDIUM  
+]]>
+        </cartModel>
+        <testObject>wqDataGC</testObject>                                                                
+        <stations>
+          <station id="WAC-033">
+            <coefficient>0.0</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-034">
+            <coefficient>-0.22010</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-035">
+            <coefficient>-0.03420</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-036">
+            <coefficient>-0.19957</coefficient>
+            <testObject></testObject>
+          </station>
+          <station id="WAC-037">
+            <coefficient>-0.22955</coefficient>
+            <testObject></testObject>
+          </station>
+        </stations>
+      </watershed>
+
+
+    </watersheds>    
+  </stationTesting>
 </environment>
