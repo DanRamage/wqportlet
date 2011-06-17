@@ -47,11 +47,13 @@ Purpose: This is the base class for the actually water quality prediction proces
 class wqEquations(object):
   def __init__(self, station):
     self.station = station  #The station that this object represents.
-    self.lnMLRResult = -1 #The natural log result from the mlr/regression formula.
-    self.mlrResult = -1 #The exp(lnMLRResult) result. 
+    self.log10MLRResult = -1 #The natural log result from the mlr/regression formula.
+    self.mlrResult = -1 #The exp(log10MLRResult) result. 
     self.mlrPrediction = predictionLevels.NO_TEST  #The prediction for the regression formula.
     self.cartPrediction = predictionLevels.NO_TEST #The prediction for the cart model.
     self.ensemblePrediction = predictionLevels.NO_TEST #The overall prediction result.
+    self.data = {} #Data used for the tests.
+
   """
   Function: runTests
   Purpose: Runs the suite of tests, current a regression formula and CART model, then tabulates
@@ -71,6 +73,7 @@ class wqEquations(object):
     A predictionLevels value.
   """    
   def runTests(self, regressionFormula, regressionDataDict, cartModel, cartDataDict):
+      self.data = regressionDataDict.copy()
       self.mlrTest(regressionFormula, regressionDataDict)
       self.cartTest(cartModel, cartDataDict)
       return(self.overallPrediction())
@@ -120,8 +123,8 @@ class wqEquations(object):
   """
   def mlrTest(self, regressionFormula, data):
     formula = regressionFormula % (data)
-    self.lnMLRResult = eval(formula)
-    self.mlrResult = math.exp(self.lnMLRResult)            
+    self.log10MLRResult = eval(formula)
+    self.mlrResult = math.pow(10,self.log10MLRResult)            
     return(self.mlrCategorize())
 
   """
@@ -153,7 +156,6 @@ class wqDataAccess(object):
     self.configFile = configFile
     self.regionName = regionName
     self.results = {}
-    self.data = {}
   
   """
   Function: getAverageForObs\
@@ -190,7 +192,7 @@ class wqDataAccess(object):
       dbCursor = self.obsDb.executeQuery(sql)
       if(dbCursor != None):
         row = dbCursor.fetchone()
-        if(row['m_value_avg'] != None):
+        if(row['m_value_avg'] != None):         
           avg = float(row['m_value_avg'])
         return(avg)
     else:
@@ -207,8 +209,7 @@ class wqDataAccess(object):
     A dictionary keyed on the with the specific parameters used in the regression and cart models.
   """
   def getData(self, beginDate, endDate):
-    self.data = {}
-    return(self.data)
+    return(None)
     
   def processData(self, beginDate, endDate):
     self.logMsg(logging.INFO,
@@ -216,8 +217,12 @@ class wqDataAccess(object):
     #Get the data used for this area's models
     try:
       data = self.getData(beginDate, endDate)
-      self.data = data
     except wqDataError,e:
+      if(self.logger != None):
+        self.logger.exception(e)
+        sys.exit(-1)
+      return(False)
+    except Exception, e:
       if(self.logger != None):
         self.logger.exception(e)
         sys.exit(-1)
@@ -267,27 +272,33 @@ class wqDataAccess(object):
       self.runTests(stationName, regressionFormula, cartModel, data)  
     return(True)
     
-  def runTests(self, stationName, regressionFormula, cartModel, data):    
+  def runTests(self, stationName, regressionFormula, cartModel, data):
     wqTest = wqEquations(stationName)
-    #Store the equation object for each station so we can run through them to send out results.
-    self.results[stationName] = wqTest   
     #Run through the data, if any of the values are -9999, we didn't get a value so we
     #cannot run the tests. Let's log that out.
-    runTests = True
+    dataValid = True
     for dataKey in data:
       if(data[dataKey] == -9999):
         self.logMsg(logging.ERROR, "%s has a value of -9999, we cannot run the tests." %(dataKey))
-        runTests = False
-    if(runTests):
+        dataValid = False
+    
+    if(dataValid):
       try:
         wqTest.runTests(regressionFormula, data, cartModel, data)
         self.logMsg(logging.DEBUG, "Regression value: %4.2f prediction: %d Cart Prediction: %d" %(wqTest.mlrResult, wqTest.mlrPrediction, wqTest.cartPrediction))
-        return(True)
       except Exception, e:
         if(self.logger != None):
           self.logger.exception(e)
           sys.exit(-1)
-    return(False)
+    #Figure out a better way to handle this. Since the data is not valid we aren't calling runTests. In runTests
+    #we make a copy of the data used by the object, so when we are writing out our emails/other info we can see
+    #what the object was using for data.  
+    else:
+      wqTest.data = data.copy()
+    #Store the equation object for each station so we can run through them to send out results.
+    self.results[stationName] = wqTest   
+
+    return(dataValid)
 
   
   def logMsg(self, msgLevel, msg):
@@ -299,20 +310,7 @@ class wqDataAccess(object):
 class wqDataNMB2(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="NMB2", logger=None):
     wqDataAccess.__init__(self,configFile, obsDb, nexradDb, regionName, logger)
-    
-  def runTests(self, stationName, regressionFormula, cartModel, data):
-    wqTest = wqEquations(stationName)
-    #Store the equation object for each station so we can run through them to send out results.
-    self.results[stationName] = wqTest      
-    try:
-      wqTest.runTests(regressionFormula, data, cartModel, data)
-      self.logMsg(logging.DEBUG, "Regression value: %4.2f prediction: %d Cart Prediction: %d" %(wqTest.mlrResult, wqTest.mlrPrediction, wqTest.cartPrediction))
-      return(True)
-    except Exception, e:
-      if(self.logger != None):
-        self.logger.exception(e)
-    return(False)
-  
+      
   def getData(self, beginDate, endDate):
     data = {}
     
@@ -347,21 +345,25 @@ class wqDataNMB2(wqDataAccess):
     data['nos8661070_water_level'] = nos8661070_water_level
 
     #Get the tide data
-    tide = noaaTideData()
-    #Date/Time format for the NOAA is YYYYMMDD
-    #Times passed in as UTC, we want local tide time, so we convert.
-    tideBegin = beginDate.astimezone(timezone('US/Eastern') )
-    tideEnd = beginDate.astimezone(timezone('US/Eastern') )
-    tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
-                       endDate = tideEnd.strftime('%Y%m%d'),
-                       station='8661070',
-                       datum='MLLW',
-                       units='feet',
-                       timezone='Local Time',
-                       smoothData=False)
-    range = tideData['HH']['value'] - tideData['LL']['value']   
-    data['range'] =  range;
-
+    try:
+      data['range'] = -9999.0;
+      tide = noaaTideData()
+      #Date/Time format for the NOAA is YYYYMMDD
+      #Times passed in as UTC, we want local tide time, so we convert.
+      tideBegin = beginDate.astimezone(timezone('US/Eastern') )
+      tideEnd = beginDate.astimezone(timezone('US/Eastern') )
+      tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
+                         endDate = tideEnd.strftime('%Y%m%d'),
+                         station='8661070',
+                         datum='MLLW',
+                         units='feet',
+                         timezone='Local Time',
+                         smoothData=False)
+      range = tideData['HH']['value'] - tideData['LL']['value']   
+      data['range'] =  range;
+    except WebFault, e:
+      raise wqDataError("Error retrieving tide data. Error: %s" %(e))
+    
     self.logMsg(logging.DEBUG, pformat(data))
     
     return(data)
@@ -378,7 +380,7 @@ class wqDataNMB3(wqDataAccess):
     stopDate = endDate.strftime('%Y-%m-%dT%H:%M:%S')
     #Get the NEXRAD data
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == -9999):
+    if(radar_rain_summary_48 == None):
       raise wqDataError("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
     data['radar_rain_summary_48'] = radar_rain_summary_48
         
@@ -389,19 +391,24 @@ class wqDataNMB3(wqDataAccess):
     data['sun2_salinity'] = sun2_salinity
        
     #Get the tide data
-    tide = noaaTideData()
-    #Date/Time format for the NOAA is YYYYMMDD
-    tideBegin = beginDate.astimezone(timezone('US/Eastern') )
-    tideEnd = endDate.astimezone(timezone('US/Eastern') )
-    tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
-                       endDate = tideEnd.strftime('%Y%m%d'),
-                       station='8661070',
-                       datum='MLLW',
-                       units='feet',
-                       timezone='Local Time',
-                       smoothData=False)
-    range = tideData['HH']['value'] - tideData['LL']['value']   
-    data['range'] =  range;
+    try:
+      data['range'] = -9999.0;
+      tide = noaaTideData()
+      #Date/Time format for the NOAA is YYYYMMDD
+      #Times passed in as UTC, we want local tide time, so we convert.
+      tideBegin = beginDate.astimezone(timezone('US/Eastern') )
+      tideEnd = beginDate.astimezone(timezone('US/Eastern') )
+      tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
+                         endDate = tideEnd.strftime('%Y%m%d'),
+                         station='8661070',
+                         datum='MLLW',
+                         units='feet',
+                         timezone='Local Time',
+                         smoothData=False)
+      range = tideData['HH']['value'] - tideData['LL']['value']   
+      data['range'] =  range;
+    except WebFault, e:
+      raise wqDataError("Error retrieving tide data. Error: %s" %(e))
     
     self.logMsg(logging.DEBUG, pformat(data))
     
@@ -599,20 +606,24 @@ class wqDataMB4(wqDataAccess):
     data['highFt'] = 0
     
     #Get the tide data
-    tide = noaaTideData()
-    #Date/Time format for the NOAA is YYYYMMDD
-    tideBegin = beginDate.astimezone(timezone('US/Eastern') )
-    tideEnd = endDate.astimezone(timezone('US/Eastern') )
-    tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
-                       endDate = tideEnd.strftime('%Y%m%d'),
-                       station='8661070',
-                       datum='MLLW',
-                       units='feet',
-                       timezone='Local Time',
-                       smoothData=False,
-                       tideFileDir="C:\\temp")
-    range = tideData['HH']['value'] - tideData['LL']['value']   
-    data['range'] =  range;
+    try:
+      data['range'] = -9999.0;
+      tide = noaaTideData()
+      #Date/Time format for the NOAA is YYYYMMDD
+      #Times passed in as UTC, we want local tide time, so we convert.
+      tideBegin = beginDate.astimezone(timezone('US/Eastern') )
+      tideEnd = beginDate.astimezone(timezone('US/Eastern') )
+      tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
+                         endDate = tideEnd.strftime('%Y%m%d'),
+                         station='8661070',
+                         datum='MLLW',
+                         units='feet',
+                         timezone='Local Time',
+                         smoothData=False)
+      range = tideData['HH']['value'] - tideData['LL']['value']   
+      data['range'] =  range;
+    except WebFault, e:
+      raise wqDataError("Error retrieving tide data. Error: %s" %(e))
            
     self.logMsg(logging.DEBUG, pformat(data))
     
@@ -662,19 +673,24 @@ class wqDataSS(wqDataAccess):
     data['lowFt'] = 0
     
     #Get the tide data
-    tide = noaaTideData()
-    #Date/Time format for the NOAA is YYYYMMDD
-    tideBegin = beginDate.astimezone(timezone('US/Eastern') )
-    tideEnd = endDate.astimezone(timezone('US/Eastern') )
-    tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
-                       endDate = tideEnd.strftime('%Y%m%d'),
-                       station='8661070',
-                       datum='MLLW',
-                       units='feet',
-                       timezone='Local Time',
-                       smoothData=False)
-    range = tideData['HH']['value'] - tideData['LL']['value']   
-    data['range'] =  range;
+    try:
+      data['range'] = -9999.0;
+      tide = noaaTideData()
+      #Date/Time format for the NOAA is YYYYMMDD
+      #Times passed in as UTC, we want local tide time, so we convert.
+      tideBegin = beginDate.astimezone(timezone('US/Eastern') )
+      tideEnd = beginDate.astimezone(timezone('US/Eastern') )
+      tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
+                         endDate = tideEnd.strftime('%Y%m%d'),
+                         station='8661070',
+                         datum='MLLW',
+                         units='feet',
+                         timezone='Local Time',
+                         smoothData=False)
+      range = tideData['HH']['value'] - tideData['LL']['value']   
+      data['range'] =  range;
+    except WebFault, e:
+      raise wqDataError("Error retrieving tide data. Error: %s" %(e))
            
     self.logMsg(logging.DEBUG, pformat(data))
     
@@ -725,19 +741,24 @@ class wqDataGC(wqDataAccess):
     data['highFt'] = 0
     
     #Get the tide data
-    tide = noaaTideData()
-    #Date/Time format for the NOAA is YYYYMMDD
-    tideBegin = beginDate.astimezone(timezone('US/Eastern') )
-    tideEnd = endDate.astimezone(timezone('US/Eastern') )
-    tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
-                       endDate = tideEnd.strftime('%Y%m%d'),
-                       station='8661070',
-                       datum='MLLW',
-                       units='feet',
-                       timezone='Local Time',
-                       smoothData=False)
-    range = tideData['HH']['value'] - tideData['LL']['value']   
-    data['range'] =  range;
+    try:
+      data['range'] = -9999.0;
+      tide = noaaTideData()
+      #Date/Time format for the NOAA is YYYYMMDD
+      #Times passed in as UTC, we want local tide time, so we convert.
+      tideBegin = beginDate.astimezone(timezone('US/Eastern') )
+      tideEnd = beginDate.astimezone(timezone('US/Eastern') )
+      tideData = tide.calcTideRange(beginDate = tideBegin.strftime('%Y%m%d'),
+                         endDate = tideEnd.strftime('%Y%m%d'),
+                         station='8661070',
+                         datum='MLLW',
+                         units='feet',
+                         timezone='Local Time',
+                         smoothData=False)
+      range = tideData['HH']['value'] - tideData['LL']['value']   
+      data['range'] =  range;
+    except WebFault, e:
+      raise wqDataError("Error retrieving tide data. Error: %s" %(e))
            
     self.logMsg(logging.DEBUG, pformat(data))
     
@@ -802,48 +823,155 @@ class testSuite(object):
         if(self.logger != None):
           self.logger.error("Region: %s using invalid testObject: %s, cannot process." %(watershedName, testObjName))
     
-    self.sendResults()
+    self.createMapOutput(nexradDB)
+    self.sendResultsEmail()
     obsDB.dbConnection.DB.close()
     nexradDB.DB.close()
     
   def sendResults(self):
+    self.createMapOutput()
     self.sendResultsEmail()
     return    
-  
+
+  """
+  Function: writeKMLFile
+  Purpose: Creates a KML file with the latest hour, 24, and 48 hour summaries.
+  """
+  def createMapOutput(self, nexradDB):
+    from pykml import KML
+    tag = "//environment/stationTesting/results/kmlFilePath"
+    kmlFilepath = self.configFile.getEntry(tag)
+
+    if(kmlFilepath != None):
+      pmTableBegin = """<table>"""
+      pmTableEnd = """</table>"""
+      #pmHdr = """<tr>%s<tr>"""
+      pmTemplate = """<tr>%(region)s</tr>
+        <tr><ul><li>Station: %(station)s</li>
+        <li>Overall Prediction: %(ensemblePrediction)s</li>
+        <li>MLR: %(mlrPrediction)s log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</li>
+        <li>Cart: %(cartPrediction)s</li></ul></tr>"""
+      
+      
+      try:        
+        self.logMsg(logging.INFO, "Creating DHEC ETCOC Prediction KML file: %s" % (kmlFilepath))
+        etcocKML = kml.KML()
+        doc = etcocKML.createDocument("DHEC ETCOC Predictions")
+        for wqObj in self.testObjects:      
+          
+          #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
+          #alpha numeric order.          
+          stationKeys = wqObj.results.keys()
+          stationKeys.sort()
+          
+          for station in stationKeys:
+            desc = ""
+            #Get the geo location information for the station
+            platformHandle = "dhec.%s.monitorstation" % (station)
+            dbCursor = nexradDB.getPlatformInfo(platformHandle)
+            latitude = 0.0
+            longitude = 0.0
+            if(dbCursor != None):
+              row = dbCursor.fetchone()
+              if(row != None):
+                latitude = row['fixed_latitude'] 
+                longitude = row['fixed_longitude'] 
+            else:
+              self.logMsg(logging.ERROR, nexradDB.getErrorInfo())
+            desc += pmTableBegin
+            tstObj = wqObj.results[station]
+            tmpltDict = { 'region' : wqObj.regionName,
+              'station' : station,
+              'ensemblePrediction' : predictionLevels(tstObj.ensemblePrediction).__str__(),
+              'mlrPrediction' : predictionLevels(tstObj.mlrPrediction).__str__(),
+              'log10MLRResult' : tstObj.log10MLRResult,
+              'mlrResult' : tstObj.mlrResult,
+              'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__()}
+            desc += pmTemplate % (tmpltDict)
+            tmpltDict.clear()
+            desc += pmTableEnd        
+            pm = etcocKML.createPlacemark(station, latitude, longitude, desc)
+            doc.appendChild(pm)
+        etcocKML.root.appendChild(doc)  
+        kmlFile = open(kmlFilepath, "w")
+        kmlFile.writelines(etcocKML.writepretty())
+        kmlFile.close()
+      except Exception, e:
+        if(self.logger != None):
+          self.logger.exception(e)      
+          sys.exit(-1)
+    else:
+      self.logMsg(logging.DEBUG, "Cannot write KML file, no filepath provided in config file.")
+    
+    return
   def sendResultsEmail(self):
     from xeniatools.utils import smtpClass 
     import string
-    import pprint
+    tag = "//environment/stationTesting/results/outputDataUsed"
+    outputData = self.configFile.getEntry(tag)
+    if(outputData == None):
+      outputData = 0
+    regionHdr = """--------%s--------
+    
+"""    
     msgTemplate = """Station: %(station)s
       Overall Prediction: %(ensemblePrediction)s
-              MLR: %(mlrPrediction)s lnMLR: %(lnMLRResult)4.2f MLR %(mlrResult)4.2f
-              Cart: %(cartPrediction)s
+              MLR: %(mlrPrediction)s log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f
+              Cart: %(cartPrediction)s"""
+    if(outputData):
+      msgTemplate += """
+              Coefficient: %(station_coefficient)f
               
 """
-    dataTemplate = """Data used for station tests: 
+      dataTemplate = """Data used for station tests: 
 %(data)s
-
+    
 
 """
-    
+    else:
+      msgTemplate += """
+"""      
+      
     try:   
       emailSettings = self.configFile.getEmailSettingsEx('//environment/stationTesting/results/')
       #Loop through the results objects to get the individual station test results.
       body = ""
       for wqObj in self.testObjects:
-        #dataPts = pformat(wqObj.data)
+        body += regionHdr % (wqObj.regionName)
+        #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
+        #alpha numeric order.          
         stationKeys = wqObj.results.keys()
         stationKeys.sort()
+        dataUsed = ""
         for station in stationKeys:
-          tstObj = wqObj.results[station]        
-          tempDict = {'station' : station,
+          tstObj = wqObj.results[station]
+
+          #If we want to output the data, and we have not already populate the station non-specific variables.
+          if(outputData and len(dataUsed) == 0):
+            #Get the region specific variables, we want to skip over the station name and coefficient.
+            for key in tstObj.data:
+              if(key != "station" and key != "station_coefficient"):
+                if(type(tstObj.data[key]) != str):
+                  dataUsed += "%s: %f\n" % (key, tstObj.data[key])
+                else:
+                  dataUsed += "%s: %s\n" % (key, tstObj.data[key])
+          
+          #Build the string substitution dictionary for the message template.
+          if('station_coefficient' in tstObj.data):
+            stationCo = tstObj.data['station_coefficient']
+          else:
+            stationCo = 0.0
+          tmpltDict = {'station' : station,
             'ensemblePrediction' : predictionLevels(tstObj.ensemblePrediction).__str__(),
             'mlrPrediction' : predictionLevels(tstObj.mlrPrediction).__str__(),
-            'lnMLRResult' : tstObj.lnMLRResult,
+            'log10MLRResult' : tstObj.log10MLRResult,
             'mlrResult' : tstObj.mlrResult,
-            'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__()}
-          body += (msgTemplate % (tempDict))
-        #body += (dataTemplate % {'data' : dataPts})                      
+            'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__(),
+            'station_coefficient' : stationCo}
+          body += (msgTemplate % (tmpltDict))
+          tmpltDict.clear()
+        if(outputData):
+          body += (dataTemplate % {'data' : dataUsed})                      
       subject = "Results"
       smtp = smtpClass(emailSettings['server'], emailSettings['from'], emailSettings['pwd'])
       smtp.from_addr("%s@%s" % (emailSettings['from'],emailSettings['server']))
