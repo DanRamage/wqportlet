@@ -1,3 +1,10 @@
+"""
+Revisions:
+Date: 2011-06-23
+Function: getLatestHourXMRGData
+Changes: Implemented datetime object use to clean up the date calculations.
+Pass the database connection into the writeLatLonDb function instead of having it create the object every loop.
+"""
 import sys
 import os
 import traceback
@@ -166,34 +173,62 @@ class dhecXMRGProcessing(processXMRGData):
       else:
         print(traceback.print_exc())
       
-  def getLatestHourXMRGData(self):    
+  def getLatestHourXMRGData(self):   
+    import datetime
+    from datetime import tzinfo
+    from pytz import timezone
+
     try: 
       self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True)
 
       #Clean out any data older than xmrgKeepLastNDays.
       db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
+      if(self.logger != None):
+        self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
+      if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
+        if(self.logger != None):
+          self.logger.debug("Error loading: %s Error: %s" %(self.configSettings.spatiaLiteLib,db.lastErrorMsg))
             
+      
+      #DWR 2011-06-23
+      #Since we process on the previous day, make the starting time the beginning of the current day.
+      #Use the datetime object to improve the code readability.
+      nowTime = datetime.datetime.now(timezone('UTC'))
+      curDay = nowTime
+      curDay = curDay.replace(hour=0, minute=0, second=0,microsecond=0)
+      
+      #Clean up data older than xmrgKeepLastNDays
+      olderThan = curDay - datetime.timedelta(days=self.xmrgKeepLastNDays)
+      db.cleanPrecipRadar(olderThan.strftime("%Y-%m-%dT%H:%M:%S"))
       #Current time minus N days worth of seconds.
-      timeNHoursAgo = time.time() - ( self.xmrgKeepLastNDays * 24 * 60 * 60 ) 
-      currentDateTime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime(timeNHoursAgo))
-      db.cleanPrecipRadar(currentDateTime)
+      #timeNHoursAgo = time.time() - ( self.xmrgKeepLastNDays * 24 * 60 * 60 ) 
+      #currentDateTime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime(timeNHoursAgo))
+      #db.cleanPrecipRadar(currentDateTime)
             
       dateList=[]
       #The latest completed hour will be current hour - 1.
-      hr = time.time()-3600
-      latestHour = time.strftime( "%Y-%m-%dT%H:00:00", time.localtime(hr))
+      #hr = time.time()-3600
+      #latestHour = time.strftime( "%Y-%m-%dT%H:00:00", time.localtime(hr))
+      latestHour = nowTime - datetime.timedelta(hours=1)
+      latestHour = latestHour.strftime("%Y-%m-%dT%H:00:00")
       #add it to our list to process
       dateList.append(latestHour)
       
       #Are we going to try to backfill any gaps in the data?
       if(self.backfillLastNDays):
-        baseTime = time.time()-3600
+        #baseTime = time.time()-3600
+        baseTime = nowTime - datetime.timedelta(hours=1)
         #Now let's build a list of the last N hours of data we should have to see if we have any holes
         #to fill.
         lastNHours = self.backfillLastNDays * 24
         for x in range(lastNHours):
-          datetime = time.strftime("%Y-%m-%dT%H:00:00", time.localtime(baseTime - ((x+1) * 3600)))          
-          dateList.append(datetime)
+          hr = x + 1
+          dateTime = baseTime - datetime.timedelta(hours=hr)
+          dateList.append(dateTime.strftime("%Y-%m-%dT%H:00:00"))
+          #DWR 2011-06-23
+          #This is incorrect, was building the list with local time where data in the database is in UTC.
+          #datetime = time.strftime("%Y-%m-%dT%H:00:00", time.localtime(baseTime - ((x+1) * 3600)))          
+          #dateList.append(datetime)
         sql = "SELECT DISTINCT(collection_date) as date FROM precipitation_radar ORDER BY collection_date DESC;"
         dbCursor = db.executeQuery(sql)
         if(dbCursor != None):
@@ -205,22 +240,17 @@ class dhecXMRGProcessing(processXMRGData):
               if(dbDate == dateList[x]):
                 dateList.pop(x)
                 break          
-      db.DB.close()
-      
-      #del dateList[:]
-      #dateList.append('2009-10-14T16:00:00')
-      
+          dbCursor.close()
+                    
       for date in dateList:
-        fileName = self.buildXMRGFilename(date,False)
+        xmrgFilename = self.buildXMRGFilename(date,False)
         #Now we try to download the file.
-        fileName = self.getXMRGFile(fileName)
+        fileName = self.getXMRGFile(xmrgFilename)
         if( fileName != None ):
           self.logger.info( "Processing XMRG File: %s" %(fileName))
-          #xmrg = xmrgFile( self.loggerName )
-          #xmrg.openFile( fileName )
-          self.processXMRGFile( fileName )
+          self.processXMRGFile(fileName, db)
         else:
-          self.logger.error( "Unable to download file: %s" %(fileName))
+          self.logger.error( "Unable to download file: %s" %(xmrgFilename))
           
     except Exception, E:
       self.lastErrorMsg = str(E) 
@@ -228,6 +258,9 @@ class dhecXMRGProcessing(processXMRGData):
         self.logger.critical( "Exception occured:", exc_info=1 )
       else:
         print(traceback.print_exc())
+    
+    db.DB.close()
+
     return(None)
 
   def processXMRGFile(self,fileName, db=None):
@@ -551,6 +584,8 @@ class dhecXMRGProcessing(processXMRGData):
           #NOw calc the weighted averages for the watersheds and add the measurements to the multi-obs table
           if(rainDataFound and self.calcWeightedAvg):
             self.calculateWeightedAverages(filetime,filetime,db,True)
+          else:
+            i = 0
       except Exception, E:
         self.lastErrorMsg = str(E)
         if(self.logger != None):
@@ -587,34 +622,41 @@ class dhecXMRGProcessing(processXMRGData):
           nfo = platformCursor.fetchone()
           if(nfo != None):
             #Calculate the weighted averages and add into multi obs table.
-            avg = dbConnection.calculateWeightedAvg(rainGauge, startDate, endDate)
+            avg = dbConnection.calculateWeightedAvg(rainGauge, startDate, endDate)            
             if(avg != None):
-              if(avg > 0.0):
-                mVals = []
-                mVals.append(avg)
-                
-                if(addSensor):
-                  dbConnection.addSensor('precipitation_radar_weighted_average', 'in', platformHandle, 1, 0, 1, None, False)        
-                #Add the avg into the multi obs table. Since we are going to deal with the hourly data for the radar and use
-                #weighted averages, instead of keeping lots of radar data in the radar table, we calc the avg and 
-                #store it as an obs in the multi-obs table.
-                if(dbConnection.addMeasurement('precipitation_radar_weighted_average', 'in',
-                                                   platformHandle,
-                                                   startDate,
-                                                   nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                                   0,
-                                                   mVals,
-                                                   1,
-                                                   False) != True):
-                  if(self.logger != None):
-                    self.logger.error( "%s"\
-                                       %(dbConnection.getErrorInfo()) )
-                  dbConnection.clearErrorInfo()
-                  return(False)
+              if(avg > 0.0 or self.saveAllPrecipVals):                    
+                if(avg != -9999):
+                  mVals = []
+                  mVals.append(avg)
+                  
+                  if(addSensor):
+                    dbConnection.addSensor('precipitation_radar_weighted_average', 'in', platformHandle, 1, 0, 1, None, False)        
+                  #Add the avg into the multi obs table. Since we are going to deal with the hourly data for the radar and use
+                  #weighted averages, instead of keeping lots of radar data in the radar table, we calc the avg and 
+                  #store it as an obs in the multi-obs table.
+                  if(dbConnection.addMeasurement('precipitation_radar_weighted_average', 'in',
+                                                     platformHandle,
+                                                     startDate,
+                                                     nfo['fixed_latitude'], nfo['fixed_longitude'],
+                                                     0,
+                                                     mVals,
+                                                     1,
+                                                     False) != True):
+                    if(self.logger != None):
+                      self.logger.error( "%s"\
+                                         %(dbConnection.getErrorInfo()) )
+                    dbConnection.clearErrorInfo()
+                    return(False)
+                  else:
+                    if(self.logger != None):
+                      self.logger.debug( "Platform: %s added weighted avg: %f." %(platformHandle,avg) )                                 
+                  recsAdded = True
                 else:
                   if(self.logger != None):
-                    self.logger.debug( "Platform: %s added weighted avg: %f." %(platformHandle,avg) )                                 
-                recsAdded = True
+                    self.logger.debug( "Platform: %s weighted avg: %f is not valid, not adding to database." %(platformHandle,avg) )
+              else:
+                if(self.logger != None):
+                  self.logger.debug( "Platform: %s configuration parameter not set to add precip values of 0.0." %(platformHandle))                                                         
             else:
               if(self.logger != None):
                 self.logger.error( "Weighted AVG error: %s" %(dbConnection.getErrorInfo()) )
