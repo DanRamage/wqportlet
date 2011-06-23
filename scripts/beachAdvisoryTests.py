@@ -37,7 +37,7 @@ class predictionLevels(object):
     elif(self.value == self.HIGH):
       return "HIGH"
     else:
-      return "NO_TEST"
+      return "NO TEST"
 """ 
 Class wqTest
 Purpose: This is the base class for the actually water quality prediction process.
@@ -425,17 +425,17 @@ class wqDataMB1(wqDataAccess):
     
   def getData(self, beginDate, endDate):
     data = {}
-    
+       
     startDate = beginDate.strftime('%Y-%m-%dT%H:%M:%S')
     stopDate = endDate.strftime('%Y-%m-%dT%H:%M:%S')
     #Get the NEXRAD data
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == -9999):
+    if(radar_rain_summary_48 == None):
       raise wqDataError("Error retrieving radar_rain_summary_48. Error: %s" %(self.nexradDb.getErrorInfo()))
     data['radar_rain_summary_48'] = radar_rain_summary_48
 
     radar_rain_summary_144 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 144)
-    if(radar_rain_summary_144 == -9999):
+    if(radar_rain_summary_144 == None):
       raise wqDataError("Error retrieving radar_rain_summary_144. Error: %s" %(self.nexradDb.getErrorInfo()))
     data['radar_rain_summary_144'] = radar_rain_summary_144
         
@@ -452,7 +452,7 @@ class wqDataMB1(wqDataAccess):
     data['nos8661070_water_level'] = nos8661070_water_level
 
     #NOTE: Find out what this variable is!!!!
-    data['lowFt'] = 0
+    data['lowFt'] = -9999
     
     self.logMsg(logging.DEBUG, pformat(data))
     
@@ -491,7 +491,7 @@ class wqDataMB2(wqDataAccess):
     data['nos8661070_water_level'] = nos8661070_water_level
 
     nos8661070_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_wind_dir == -9999):
+    if(nos8661070_wind_dir == None):
       raise wqDataError("Error retrieving nos8661070_wind_dir from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))        
     nos8661070_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(nos8661070_wind_dir)
     data['nos8661070_wind_dir'] = nos8661070_compass_dir
@@ -520,7 +520,7 @@ class wqDataMB3(wqDataAccess):
     data['radar_rain_summary_24'] = radar_rain_summary_24
 
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == -9999):
+    if(radar_rain_summary_48 == None):
       raise wqDataError("Error retrieving radar_rain_summary_48. Error: %s" %(self.nexradDb.getErrorInfo()))
     data['radar_rain_summary_48'] = radar_rain_summary_48
 
@@ -603,7 +603,7 @@ class wqDataMB4(wqDataAccess):
     data['nos8661070_water_level'] = nos8661070_water_level
 
     #NOTE: Do not know what this represents!
-    data['highFt'] = 0
+    data['highFt'] = -9999
     
     #Get the tide data
     try:
@@ -670,7 +670,7 @@ class wqDataSS(wqDataAccess):
     data['nos8661070_water_temp'] = nos8661070_water_temp
 
     #NOTE: Do not know what this represents!
-    data['lowFt'] = 0
+    data['lowFt'] = -9999
     
     #Get the tide data
     try:
@@ -738,7 +738,7 @@ class wqDataGC(wqDataAccess):
     data['nos8661070_water_level'] = nos8661070_water_level
 
     #NOTE: Do not know what this represents!
-    data['highFt'] = 0
+    data['highFt'] = -9999
     
     #Get the tide data
     try:
@@ -792,6 +792,8 @@ class testSuite(object):
     
   """
   def runTests(self, beginDate, endDate):
+    testRunDate = datetime.datetime.now(timezone('US/Eastern'))
+
     obsDBSettings = self.configFile.getDatabaseSettingsEx('//environment/stationTesting/database/obsDatabase/')
     obsDB = dbXenia()
     #def connect(self, dbFilePath=None, user=None, passwd=None, host=None, dbName=None ):
@@ -823,8 +825,8 @@ class testSuite(object):
         if(self.logger != None):
           self.logger.error("Region: %s using invalid testObject: %s, cannot process." %(watershedName, testObjName))
     
-    self.createMapOutput(nexradDB)
-    self.sendResultsEmail()
+    self.createMapOutput(nexradDB, testRunDate)
+    self.sendResultsEmail(testRunDate)
     obsDB.dbConnection.DB.close()
     nexradDB.DB.close()
     
@@ -837,8 +839,8 @@ class testSuite(object):
   Function: writeKMLFile
   Purpose: Creates a KML file with the latest hour, 24, and 48 hour summaries.
   """
-  def createMapOutput(self, nexradDB):
-    from pykml import KML
+  def createMapOutput(self, nexradDB, testRunDate):
+    from pykml import kml
     tag = "//environment/stationTesting/results/kmlFilePath"
     kmlFilepath = self.configFile.getEntry(tag)
 
@@ -846,17 +848,34 @@ class testSuite(object):
       pmTableBegin = """<table>"""
       pmTableEnd = """</table>"""
       #pmHdr = """<tr>%s<tr>"""
-      pmTemplate = """<tr>%(region)s</tr>
-        <tr><ul><li>Station: %(station)s</li>
-        <li>Overall Prediction: %(ensemblePrediction)s</li>
-        <li>MLR: %(mlrPrediction)s log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</li>
-        <li>Cart: %(cartPrediction)s</li></ul></tr>"""
-      
-      
+      pmTemplate = """<tr><td>%(region)s</td></tr>
+        <tr><td>Station:</td><td>%(station)s</td><td>%(description)s</td></tr>
+        <tr><td>Test Run Date:</td><td>%(testRunDate)s</td></tr>        
+        <tr><td>Overall Prediction:</td><td>%(ensemblePrediction)s</td></tr>
+        <tr><td>MLR:</td><td>%(mlrPrediction)s</td><td>log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</td></tr>
+        <tr><td>Cart:</td><td>%(cartPrediction)s</td></tr>"""
+
       try:        
         self.logMsg(logging.INFO, "Creating DHEC ETCOC Prediction KML file: %s" % (kmlFilepath))
         etcocKML = kml.KML()
         doc = etcocKML.createDocument("DHEC ETCOC Predictions")
+        doc.appendChild(etcocKML.createStyle(
+            id="no_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/no_light16x16.png"))
+        ))
+        doc.appendChild(etcocKML.createStyle(
+            id="low_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/green_light16x16.png"))
+            
+        ))
+        doc.appendChild(etcocKML.createStyle(
+            id="med_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/yellow_light16x16.png"))            
+        ))
+        doc.appendChild(etcocKML.createStyle(
+            id="hi_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/red_light16x16.png"))                        
+        ))
         for wqObj in self.testObjects:      
           
           #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
@@ -871,13 +890,15 @@ class testSuite(object):
             dbCursor = nexradDB.getPlatformInfo(platformHandle)
             latitude = 0.0
             longitude = 0.0
+            stationDesc = ""
             if(dbCursor != None):
               row = dbCursor.fetchone()
               if(row != None):
                 latitude = row['fixed_latitude'] 
                 longitude = row['fixed_longitude'] 
+                stationDesc = row['description']
             else:
-              self.logMsg(logging.ERROR, nexradDB.getErrorInfo())
+              self.logMsg(logging.ERROR, "ERROR: Unable to get platform: %s data. %s" % (platformHandle, nexradDB.getErrorInfo()))
             desc += pmTableBegin
             tstObj = wqObj.results[station]
             tmpltDict = { 'region' : wqObj.regionName,
@@ -886,11 +907,21 @@ class testSuite(object):
               'mlrPrediction' : predictionLevels(tstObj.mlrPrediction).__str__(),
               'log10MLRResult' : tstObj.log10MLRResult,
               'mlrResult' : tstObj.mlrResult,
-              'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__()}
+              'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__(),
+              'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M'),
+              'description' : stationDesc}
             desc += pmTemplate % (tmpltDict)
             tmpltDict.clear()
             desc += pmTableEnd        
-            pm = etcocKML.createPlacemark(station, latitude, longitude, desc)
+            predictionStyle = "#no_prediction"
+            if(tstObj.ensemblePrediction == predictionLevels.LOW):
+              predictionStyle = "#low_prediction"
+            elif(tstObj.ensemblePrediction == predictionLevels.MEDIUM):
+              predictionStyle = "#med_prediction"
+            elif(tstObj.ensemblePrediction == predictionLevels.HIGH):
+              predictionStyle = "#hi_prediction"
+              
+            pm = etcocKML.createPlacemark(station, latitude, longitude, desc, predictionStyle)
             doc.appendChild(pm)
         etcocKML.root.appendChild(doc)  
         kmlFile = open(kmlFilepath, "w")
@@ -904,13 +935,17 @@ class testSuite(object):
       self.logMsg(logging.DEBUG, "Cannot write KML file, no filepath provided in config file.")
     
     return
-  def sendResultsEmail(self):
+  def sendResultsEmail(self, testRunDate):
     from xeniatools.utils import smtpClass 
     import string
     tag = "//environment/stationTesting/results/outputDataUsed"
     outputData = self.configFile.getEntry(tag)
     if(outputData == None):
       outputData = 0
+    subjectTmpl = "[DHEC] Water Quality Prediction Results - %(testRunDate)s"
+    header =  """Test Run Date: %(testRunDate)s
+"""
+
     regionHdr = """--------%s--------
     
 """    
@@ -935,7 +970,7 @@ class testSuite(object):
     try:   
       emailSettings = self.configFile.getEmailSettingsEx('//environment/stationTesting/results/')
       #Loop through the results objects to get the individual station test results.
-      body = ""
+      body = header % ({'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M')})
       for wqObj in self.testObjects:
         body += regionHdr % (wqObj.regionName)
         #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
@@ -972,7 +1007,7 @@ class testSuite(object):
           tmpltDict.clear()
         if(outputData):
           body += (dataTemplate % {'data' : dataUsed})                      
-      subject = "Results"
+      subject =  subjectTmpl % ({'testRunDate' : testRunDate.strftime('%Y-%m-%d')})
       smtp = smtpClass(emailSettings['server'], emailSettings['from'], emailSettings['pwd'])
       smtp.from_addr("%s@%s" % (emailSettings['from'],emailSettings['server']))
       smtp.rcpt_to(emailSettings['toList'])
