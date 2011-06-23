@@ -1,6 +1,16 @@
+"""
+Revisions:
+Date: 2011-06-23
+Function: getLastNHoursSummaryFromRadarPrecip
+Changes: Now we are adding the weighted averages even for values of 0 into the database. Had to rework
+this function to calculate the preceeding dry days.
+"""
 import os
 import sys
 import time
+import datetime
+from datetime import tzinfo
+from pytz import timezone
 import logging
 import logging.handlers
 from pysqlite2 import dbapi2 as sqlite3
@@ -632,12 +642,40 @@ class dhecDB(xeniaSQLite):
     prevHourCnt is the number of hours to go back from the given datetime above.
   """
   def getLastNHoursSummaryFromRadarPrecip(self, datetime, rain_gauge, prevHourCnt):
-    sum = -9999.0
+    sum = None
     platformHandle = 'nws.%s.radar' % (rain_gauge)
-    mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation_radar_weighted_average', 'in',platformHandle,1)
-    if(mTypeID != None):
-      sum = self.getLastNHoursPrecipSummary(datetime, mTypeID, platformHandle, prevHourCnt)
-    return(sum)
+    #mTypeID = xeniaSQLite.getMTypeFromObsName(self, 'precipitation_radar_weighted_average', 'in',platformHandle,1)
+    #Get the sensor ID for the obs we are interested in so we can use it to query the data.
+    sensorID = xeniaSQLite.sensorExists(self, 'precipitation_radar_weighted_average', 'in', platformHandle)
+    
+    #if(mTypeID != None):
+      #sum = self.getLastNHoursPrecipSummary(datetime, mTypeID, platformHandle, prevHourCnt)
+      
+    if(sensorID != None):
+      sql = "SELECT SUM(m_value) \
+             FROM multi_obs \
+             WHERE\
+               m_date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
+               m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s' ) AND\
+               sensor_id = %d"\
+               % (datetime, prevHourCnt, datetime, sensorID)
+      try:
+        dbCursor = self.executeQuery(sql)
+        if(dbCursor != None):
+          sum = dbCursor.fetchone()[0]
+          if(sum != None):
+            sum = float(sum)
+          #Currently we are not putting radar summaries of 0 in the database, so if our query doesn't return
+          #any records, then our sum is 0.
+          else:
+            sum = 0.0
+      except sqlite3.Error, e:
+        self.rowErrorCnt += 1
+        if(self.logger != None):
+          self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
+        else:
+          print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
+    return(sum)  
 
   def getLastNHoursSummary(self, datetime, rain_gauge, prevHourCnt):
     platformHandle = 'dhec.%s.raingauge' % (rain_gauge)
@@ -724,7 +762,33 @@ class dhecDB(xeniaSQLite):
     rainGauge is the rain  gauge we are query the rainfall summary for.
   """
   def getPrecedingRadarDryDaysCount(self, dateTime, rainGauge):
-    iDryCnt = 0
+    
+    iDryCnt = -9999
+    platformHandle = "nws.%s.radar" %(rainGauge)
+    sensorId = xeniaSQLite.sensorExists(self,"precipitation_radar_weighted_average", "in", platformHandle)
+    if(sensorId != None and sensorId != -1):
+      #We want to start our dry day search the day before our dateTime.
+      startDate = datetime.datetime.strptime(dateTime,"%Y-%m-%dT%H:%M:%S") - datetime.timedelta(days=2)
+      sql = "SELECT m_date FROM multi_obs WHERE m_date <= '%s' AND sensor_id=%d AND m_value > 0 ORDER BY m_date DESC LIMIT 1;"\
+            %(dateTime,sensorId)          
+      dbCursor = xeniaSQLite.executeQuery(self,sql)
+      if(dbCursor != None):
+        row = dbCursor.fetchone()
+        if(row != None):
+          firstVal = datetime.datetime.strptime(row['m_date'], "%Y-%m-%dT%H:%M:%S")
+          delta = startDate - firstVal
+          iDryCnt = delta.days
+      else:
+        if(self.logger != None):
+          self.logger.error("getPrecedingRadarDryDaysCount failed to retrieve data for platform: %s. %s"\
+                            % (platformHandle,self.lastErrorMsg))
+        iDryCnt = None
+    else:
+      if(self.logger != None):
+        self.logger.error("No sensor id found for platform: %s." % (platformHandle))
+      iDryCnt = None
+    return(iDryCnt)
+    """        
     secondsInDay = 24 * 60 * 60
     platformHandle = "nws.%s.radar" %(rainGauge)
     mTypeID = xeniaSQLite.getMTypeFromObsName(self,"precipitation_radar_weighted_average","in",platformHandle,1)
@@ -749,8 +813,10 @@ class dhecDB(xeniaSQLite):
         #Convert to an epoch time using the year month and day.
         endDate = time.mktime(time.strptime(row['m_date'], "%Y-%m-%d"))
         #Determine the day count.
-        iDryCnt = (startDate - endDate) / secondsInDay      
-        
+        iDryCnt = (startDate - endDate) / secondsInDay
+    else:
+      iDryCnt = None
+    """    
     return(iDryCnt)
       
   
