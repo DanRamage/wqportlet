@@ -651,13 +651,22 @@ class dhecDB(xeniaSQLite):
     #if(mTypeID != None):
       #sum = self.getLastNHoursPrecipSummary(datetime, mTypeID, platformHandle, prevHourCnt)
       
-    if(sensorID != None):
+    if(sensorID != None and sensorID != -1):
+      """
       sql = "SELECT SUM(m_value) \
              FROM multi_obs \
              WHERE\
                m_date >= strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', datetime( '%s', '-%d hours' ) ) AND \
                m_date < strftime( '%%Y-%%m-%%dT%%H:%%M:%%S', '%s' ) AND\
                sensor_id = %d"\
+               % (datetime, prevHourCnt, datetime, sensorID)
+      """
+      sql = "SELECT SUM(m_value) \
+             FROM multi_obs \
+             WHERE\
+               m_date >= datetime( '%s', '-%d hours' ) AND \
+               m_date < '%s' AND\
+               sensor_id = %d AND m_value > 0.0;"\
                % (datetime, prevHourCnt, datetime, sensorID)
       try:
         dbCursor = self.executeQuery(sql)
@@ -675,6 +684,10 @@ class dhecDB(xeniaSQLite):
           self.logger.error("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))
         else:
           print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
+    else:
+      if(self.logger != None):
+        self.logger.error("No sensor id found for platform: %s." % (platformHandle))
+    
     return(sum)  
 
   def getLastNHoursSummary(self, datetime, rain_gauge, prevHourCnt):
@@ -768,9 +781,9 @@ class dhecDB(xeniaSQLite):
     sensorId = xeniaSQLite.sensorExists(self,"precipitation_radar_weighted_average", "in", platformHandle)
     if(sensorId != None and sensorId != -1):
       #We want to start our dry day search the day before our dateTime.
-      startDate = datetime.datetime.strptime(dateTime,"%Y-%m-%dT%H:%M:%S") - datetime.timedelta(days=2)
+      startDate = datetime.datetime.strptime(dateTime,"%Y-%m-%dT%H:%M:%S")
       sql = "SELECT m_date FROM multi_obs WHERE m_date <= '%s' AND sensor_id=%d AND m_value > 0 ORDER BY m_date DESC LIMIT 1;"\
-            %(dateTime,sensorId)          
+            %(startDate,sensorId)          
       dbCursor = xeniaSQLite.executeQuery(self,sql)
       if(dbCursor != None):
         row = dbCursor.fetchone()
