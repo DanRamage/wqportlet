@@ -924,8 +924,10 @@ class testSuite(object):
           self.varMapping[variableName] = entry
 
     
-    self.createMapOutput(outputData, nexradDB, testRunDate)
-    self.sendResultsEmail(outputData, testRunDate)
+    testBeginDate = beginDate.astimezone(timezone('US/Eastern'))
+    testEndDate = endDate.astimezone(timezone('US/Eastern'))
+    self.createMapOutput(outputData, nexradDB, testBeginDate, testEndDate, testRunDate)
+    self.sendResultsEmail(outputData, testBeginDate, testEndDate, testRunDate)
     obsDB.dbConnection.DB.close()
     nexradDB.DB.close()
     
@@ -938,7 +940,7 @@ class testSuite(object):
   Function: writeKMLFile
   Purpose: Creates a KML file with the latest hour, 24, and 48 hour summaries.
   """
-  def createMapOutput(self, outputData, nexradDB, testRunDate):
+  def createMapOutput(self, outputData, nexradDB, beginDate, endDate, testRunDate):
     from pykml import kml
     tag = "//environment/stationTesting/results/kmlFilePath"
     kmlFilepath = self.configFile.getEntry(tag)
@@ -949,7 +951,8 @@ class testSuite(object):
       pmTableEnd = """</table>"""
       pmTemplate = """<tr><td>%(region)s</td></tr>
         <tr><td>Station:</td><td>%(station)s</td><td>%(description)s</td></tr>
-        <tr><td>Test Run Date:</td><td>%(testRunDate)s</td></tr>        
+        <tr><td>Prediction for Date:</td><td>%(endDate)s</td></tr>        
+        <tr><td>Date Tests Run:</td><td>%(testRunDate)s</td></tr>        
         <tr><td>Overall Prediction:</td><td>%(ensemblePrediction)s</td></tr>
         <tr><td>MLR:</td><td>%(mlrPrediction)s</td><td>log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</td></tr>
         <tr><td>Cart:</td><td>%(cartPrediction)s</td></tr>"""
@@ -1008,7 +1011,9 @@ class testSuite(object):
               'mlrResult' : tstObj.mlrResult,
               'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__(),
               'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M'),
+              'endDate' : endDate.strftime('%Y-%m-%d %H:%M'),
               'description' : stationDesc}
+            
             desc += pmTemplate % (tmpltDict)
             tmpltDict.clear()
             desc += pmTableEnd        
@@ -1066,15 +1071,16 @@ class testSuite(object):
       self.logMsg(logging.DEBUG, "Cannot write KML file, no filepath provided in config file.")
     
     return
-  def sendResultsEmail(self, outputData, testRunDate):
+  def sendResultsEmail(self, outputData, beginDate, endDate, testRunDate):
     from xeniatools.utils import smtpClass 
     import string
     tag = "//environment/stationTesting/results/outputDataUsed"
     outputData = self.configFile.getEntry(tag)
     if(outputData == None):
       outputData = 0
-    subjectTmpl = "[DHEC] Water Quality Prediction Results - %(testRunDate)s"
-    header =  """Test Run Date: %(testRunDate)s
+    subjectTmpl = "[DHEC] Water Quality Prediction Results - %(endDate)s"
+    header =  """Predictions for Date: %(endDate)s
+Test Execution Date: %(testRunDate)s
 """
 
     regionHdr = """--------%s--------
@@ -1103,7 +1109,7 @@ Data used for station tests:
     try:   
       emailSettings = self.configFile.getEmailSettingsEx('//environment/stationTesting/results/')
       #Loop through the results objects to get the individual station test results.
-      body = header % ({'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M')})
+      body = header % ({'endDate' : endDate.strftime('%Y-%m-%d'), 'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%m')})
       for wqObj in self.testObjects:
         body += regionHdr % (wqObj.regionName)
         #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
@@ -1144,7 +1150,7 @@ Data used for station tests:
           tmpltDict.clear()
         if(outputData):
           body += (dataTemplate % {'data' : dataUsed})                      
-      subject =  subjectTmpl % ({'testRunDate' : testRunDate.strftime('%Y-%m-%d')})
+      subject =  subjectTmpl % ({'endDate' : endDate.strftime('%Y-%m-%d')})
       smtp = smtpClass(emailSettings['server'], emailSettings['from'], emailSettings['pwd'])
       smtp.from_addr("%s@%s" % (emailSettings['from'],emailSettings['server']))
       smtp.rcpt_to(emailSettings['toList'])
@@ -1166,6 +1172,8 @@ if __name__ == '__main__':
     parser = optparse.OptionParser()
     parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
                       help="Configuration file." )
+    parser.add_option("-s", "--StartDateTime", dest="startDateTime",
+                      help="A date to re-run the predictions for, if not provided, the default is the current day. Format is YYYY-MM-DD HH:MM:SS." )
     (options, args) = parser.parse_args()
     if( options.xmlConfigFile == None ):
       parser.print_usage()
@@ -1179,15 +1187,24 @@ if __name__ == '__main__':
     logger = logging.getLogger("dhec_testing_logger")
     logger.info("Session started")
     
-
-    #We are going to process the previous day, so we get the current date, set the time to midnight, then convert
-    #to UTC.    
-    est = datetime.datetime.now(timezone('US/Eastern'))
-    est = est.replace(hour=0, minute=0, second=0,microsecond=0)
-    est = est - datetime.timedelta(days=1)
-    #Convert to UTC
-    beginDate = est.astimezone(timezone('UTC'))
-    endDate = beginDate + datetime.timedelta(hours=24)
+    if(options.startDateTime != None):
+      #We are going to process the previous day, so we get the current date, set the time to midnight, then convert
+      #to UTC.  
+      eastern = timezone('US/Eastern')  
+      est = eastern.localize(datetime.datetime.strptime(options.startDateTime, "%Y-%m-%d %H:%M:%S"))
+      est = est - datetime.timedelta(days=1)
+      #Convert to UTC
+      beginDate = est.astimezone(timezone('UTC'))
+      endDate = beginDate + datetime.timedelta(hours=24)
+    else:
+      #We are going to process the previous day, so we get the current date, set the time to midnight, then convert
+      #to UTC.    
+      est = datetime.datetime.now(timezone('US/Eastern'))
+      est = est.replace(hour=0, minute=0, second=0,microsecond=0)
+      est = est - datetime.timedelta(days=1)
+      #Convert to UTC
+      beginDate = est.astimezone(timezone('UTC'))
+      endDate = beginDate + datetime.timedelta(hours=24)
     
     
     testingObj = testSuite(configFile, logger)
