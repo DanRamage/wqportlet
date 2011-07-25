@@ -15,6 +15,7 @@ from xeniatools.xenia import dbXenia,dbTypes
 from xeniatools.xmlConfigFile import xmlConfigFile
 
 
+
 class wqDataError(Exception):
   def __init__(self, value):
       self.value = value
@@ -90,6 +91,7 @@ class wqEquations(object):
     result = predictionLevels.NO_TEST
     if(self.mlrPrediction != predictionLevels.NO_TEST and self.cartPrediction != predictionLevels.NO_TEST):
       self.ensemblePrediction = round(((self.mlrPrediction + self.cartPrediction) / 2.0))
+      self.ensemblePrediction = int(self.ensemblePrediction)
     return(self.ensemblePrediction)
   
   """
@@ -323,34 +325,34 @@ class wqDataNMB2(wqDataAccess):
     #Get the NEXRAD data
     data['radar_preceeding_dry_day_cnt'] = self.NO_DATA
     dryCnt = self.nexradDb.getPrecedingRadarDryDaysCount(startDate, self.regionName.lower())
-    if(dryCnt == None):
+    if(dryCnt != None):
+      data['radar_preceeding_dry_day_cnt'] = dryCnt
+    else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_preceeding_dry_day_cnt'] = dryCnt
         
     #Get the salinity from SUN2
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-        #self.logMsg(logging.ERROR, "Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-        #return(None)
-    data['sun2_salinity'] = sun2_salinity
     
     #Get the water temperature from SUN2
     data['sun2_water_temp'] = self.NO_DATA    
     sun2_water_temp = self.getAverageForObs('water_temperature', 'celsius', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_water_temp == None):
+    if(sun2_water_temp != None):
+      data['sun2_water_temp'] = sun2_water_temp
+    else:
       self.logger.error("Error retrieving water_temperature from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-      #self.logMsg(logging.ERROR, "Error retrieving water_temperature from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-      #return(None)
-    data['sun2_water_temp'] = sun2_water_temp
     
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_level == None):
+    if(nos8661070_water_level != None):
+      data['nos8661070_water_level'] = nos8661070_water_level
+    else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_level'] = nos8661070_water_level
 
     #Get the tide data
     try:
@@ -391,16 +393,18 @@ class wqDataNMB3(wqDataAccess):
     #Get the NEXRAD data
     data['radar_rain_summary_48'] = self.NO_DATA
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == None):
+    if(radar_rain_summary_48 != None):
+      data['radar_rain_summary_48'] = radar_rain_summary_48
+    else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_48'] = radar_rain_summary_48
         
     #Get the salinity from SUN2
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_salinity'] = sun2_salinity
        
     #Get the tide data
     try:
@@ -445,29 +449,33 @@ class wqDataMB1(wqDataAccess):
     #Get the NEXRAD data
     data['radar_rain_summary_48'] = self.NO_DATA
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == None):
+    if(radar_rain_summary_48 != None):
+      data['radar_rain_summary_48'] = radar_rain_summary_48
+    else:
       self.logger.error("Error retrieving radar_rain_summary_48. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_48'] = radar_rain_summary_48
 
     data['radar_rain_summary_144'] = self.NO_DATA
     radar_rain_summary_144 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 144)
-    if(radar_rain_summary_144 == None):
+    if(radar_rain_summary_144 != None):
+      data['radar_rain_summary_144'] = radar_rain_summary_144
+    else:
       self.logger.error("Error retrieving radar_rain_summary_144. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_144'] = radar_rain_summary_144
         
     #Get the salinity from SUN2
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
-      self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_salinity'] = sun2_salinity
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
+      self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))     
 
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_level == None):
+    if(nos8661070_water_level != None):
+      data['nos8661070_water_level'] = nos8661070_water_level
+    else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_level'] = nos8661070_water_level
 
     try:
       data['lowFt'] = self.NO_DATA
@@ -506,35 +514,39 @@ class wqDataMB2(wqDataAccess):
     #Get the NEXRAD data
     data['radar_rain_summary_24'] = self.NO_DATA
     radar_rain_summary_24 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 24)
-    if(radar_rain_summary_24 == None):
+    if(radar_rain_summary_24 != None):
+      data['radar_rain_summary_24'] = radar_rain_summary_24
+    else:
       self.logger.error("Error retrieving radar_rain_summary_24. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_24'] = radar_rain_summary_24
 
     data['radar_preceeding_dry_day_cnt'] = self.NO_DATA
     dryCnt = self.nexradDb.getPrecedingRadarDryDaysCount(startDate, self.regionName.lower())
-    if(dryCnt == None):
+    if(dryCnt != None):
+      data['radar_preceeding_dry_day_cnt'] = dryCnt
+    else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_preceeding_dry_day_cnt'] = dryCnt
         
     #Get the salinity from SUN2
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_salinity'] = sun2_salinity
 
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_level == None):
+    if(nos8661070_water_level != None):
+      data['nos8661070_water_level'] = nos8661070_water_level
+    else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_level'] = nos8661070_water_level
 
     data['nos8661070_wind_dir'] = self.NO_DATA
     nos8661070_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'nos.8661070.WL', startDate, stopDate)
     if(nos8661070_wind_dir == None):
       self.logger.error("Error retrieving nos8661070_wind_dir from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    if(nos8661070_wind_dir != self.NO_DATA):        
+    elif(nos8661070_wind_dir != self.NO_DATA):        
       nos8661070_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(nos8661070_wind_dir)
       data['nos8661070_wind_dir'] = nos8661070_compass_dir
     
@@ -558,47 +570,51 @@ class wqDataMB3(wqDataAccess):
     #Get the NEXRAD data
     data['radar_rain_summary_24'] = self.NO_DATA
     radar_rain_summary_24 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 24)
-    if(radar_rain_summary_24 == None):
+    if(radar_rain_summary_24 != None):
+      data['radar_rain_summary_24'] = radar_rain_summary_24
+    else:
       self.logger.error("Error retrieving radar_rain_summary_24. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_24'] = radar_rain_summary_24
 
     data['radar_rain_summary_48'] = self.NO_DATA
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == None):
+    if(radar_rain_summary_48 != None):
+      data['radar_rain_summary_48'] = radar_rain_summary_48
+    else:
       self.logger.error("Error retrieving radar_rain_summary_48. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_48'] = radar_rain_summary_48
 
     data['radar_preceeding_dry_day_cnt'] = self.NO_DATA
     dryCnt = self.nexradDb.getPrecedingRadarDryDaysCount(startDate, self.regionName.lower())
-    if(dryCnt == None):
+    if(dryCnt != None):
+      data['radar_preceeding_dry_day_cnt'] = dryCnt
+    else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_preceeding_dry_day_cnt'] = dryCnt
         
     #Get the salinity from SUN2
     data['sun2_wind_speed'] = self.NO_DATA
     sun2_wind_speed = self.getAverageForObs('wind_speed', 'm_s-1', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_wind_speed == None):
-      self.logger.error("Error retrieving sun2_wind_speed from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    #Convert to knots.
-    if(sun2_wind_speed != self.NO_DATA):
+    if(sun2_wind_speed != None and sun2_wind_speed != self.NO_DATA):
       sun2_wind_speed *= 1.9438444924406    
       data['sun2_wind_speed'] = sun2_wind_speed
+    #Convert to knots.
+    else:
+      self.logger.error("Error retrieving sun2_wind_speed from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
 
     #Get the salinity from SUN2
     data['sun2_wind_dir'] = self.NO_DATA
     sun2_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'carocoops.SUN2.buoy', startDate, stopDate)
     if(sun2_wind_dir == None):
       self.logger.error("Error retrieving sun2_wind_dir from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    if(sun2_wind_dir != self.NO_DATA):
+    elif(sun2_wind_dir != self.NO_DATA):
       sun2_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(sun2_wind_dir)
       data['sun2_wind_dir'] = sun2_compass_dir
 
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_level == None):
+    if(nos8661070_water_level != None):
+      data['nos8661070_water_level'] = nos8661070_water_level
+    else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_level'] = nos8661070_water_level
            
     self.logMsg(logging.DEBUG, pformat(data))
     
@@ -621,42 +637,47 @@ class wqDataMB4(wqDataAccess):
 
     data['radar_rain_summary_48'] = self.NO_DATA
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == None):
+    if(radar_rain_summary_48 != None):
+      data['radar_rain_summary_48'] = radar_rain_summary_48
+    else:
       self.logger.error("Error retrieving radar_rain_summary_48. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_48'] = radar_rain_summary_48
 
     data['radar_preceeding_dry_day_cnt'] = self.NO_DATA
     dryCnt = self.nexradDb.getPrecedingRadarDryDaysCount(startDate, self.regionName.lower())
-    if(dryCnt == None):
+    if(dryCnt != None):
+      data['radar_preceeding_dry_day_cnt'] = dryCnt
+    else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_preceeding_dry_day_cnt'] = dryCnt
         
     data['sun2_water_temp'] = self.NO_DATA
     sun2_water_temp = self.getAverageForObs('water_temperature', 'celsius', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_water_temp == None):
+    if(sun2_water_temp != None):
+      data['sun2_water_temp'] = sun2_water_temp
+    else:
       self.logger.error("Error retrieving sun2_water_temp from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_water_temp'] = sun2_water_temp
 
     data['sun2_wind_dir'] = self.NO_DATA
     sun2_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'carocoops.SUN2.buoy', startDate, stopDate)
     if(sun2_wind_dir == None):
       self.logger.error("Error retrieving sun2_wind_dir from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    if(sun2_wind_dir != self.NO_DATA):
+    elif(sun2_wind_dir != self.NO_DATA):
       sun2_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(sun2_wind_dir)
       data['sun2_wind_dir'] = sun2_compass_dir
 
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_salinity'] = sun2_salinity
 
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_level == None):
+    if(nos8661070_water_level != None):
+      data['nos8661070_water_level'] = nos8661070_water_level
+    else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_level'] = nos8661070_water_level
 
     
     #Get the tide data
@@ -704,33 +725,38 @@ class wqDataSS(wqDataAccess):
 
     data['radar_rain_summary_24'] = self.NO_DATA
     radar_rain_summary_24 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 24)
-    if(radar_rain_summary_24 == None):
+    if(radar_rain_summary_24 != None):
+      data['radar_rain_summary_24'] = radar_rain_summary_24
+    else:
       self.logger.error("Error retrieving radar_rain_summary_24. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_24'] = radar_rain_summary_24
 
     data['radar_rainfall_intensity_24'] = self.NO_DATA
     radar_rainfall_intensity_24 = self.nexradDb.calcRadarRainfallIntensity(self.regionName.lower(), startDate, 60)
-    if(radar_rainfall_intensity_24 == None):
+    if(radar_rainfall_intensity_24 != None):
+      data['radar_rainfall_intensity_24'] = radar_rainfall_intensity_24
+    else:
       self.logger.error("Error retrieving radar_rainfall_intensity_24. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rainfall_intensity_24'] = radar_rainfall_intensity_24
         
     data['sun2_water_temp'] = self.NO_DATA
     sun2_water_temp = self.getAverageForObs('water_temperature', 'celsius', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_water_temp == None):
+    if(sun2_water_temp != None):
+      data['sun2_water_temp'] = sun2_water_temp
+    else:
       self.logger.error("Error retrieving sun2_water_temp from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_water_temp'] = sun2_water_temp
 
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_salinity'] = sun2_salinity
 
     data['nos8661070_water_temp'] = self.NO_DATA
     nos8661070_water_temp = self.getAverageForObs('water_temperature', 'celsius', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_temp == None):
+    if(nos8661070_water_temp != None):
+      data['nos8661070_water_temp'] = nos8661070_water_temp
+    else:
       self.logger.error("Error retrieving nos8661070_water_temp from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_temp'] = nos8661070_water_temp
 
     
     #Get the tide data
@@ -778,34 +804,39 @@ class wqDataGC(wqDataAccess):
 
     data['radar_rain_summary_48'] = self.NO_DATA
     radar_rain_summary_48 = self.nexradDb.getLastNHoursSummaryFromRadarPrecip(startDate, self.regionName.lower(), 48)
-    if(radar_rain_summary_48 == None):
+    if(radar_rain_summary_48 != None):
+      data['radar_rain_summary_48'] = radar_rain_summary_48
+    else:
       self.logger.error("Error retrieving radar_rain_summary_48. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_rain_summary_48'] = radar_rain_summary_48
 
     data['radar_preceeding_dry_day_cnt'] = self.NO_DATA
     dryCnt = self.nexradDb.getPrecedingRadarDryDaysCount(startDate, self.regionName.lower())
-    if(dryCnt == None):
+    if(dryCnt != None):
+      data['radar_preceeding_dry_day_cnt'] = dryCnt
+    else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
-    data['radar_preceeding_dry_day_cnt'] = dryCnt
 
         
     data['sun2_water_temp'] = self.NO_DATA
     sun2_water_temp = self.getAverageForObs('water_temperature', 'celsius', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_water_temp == None):
+    if(sun2_water_temp != None):
+      data['sun2_water_temp'] = sun2_water_temp
+    else:
       self.logger.error("Error retrieving sun2_water_temp from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_water_temp'] = sun2_water_temp
 
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
-    if(sun2_salinity == None):
+    if(sun2_salinity != None):
+      data['sun2_salinity'] = sun2_salinity
+    else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-    data['sun2_salinity'] = sun2_salinity
 
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
-    if(nos8661070_water_level == None):
+    if(nos8661070_water_level != None):
+      data['nos8661070_water_level'] = nos8661070_water_level
+    else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-    data['nos8661070_water_level'] = nos8661070_water_level
 
     #Get the tide data
     try:
@@ -894,6 +925,8 @@ class testSuite(object):
         wqObj = testObj(configFile=configFile, obsDb=obsDB, nexradDb=nexradDB, logger=logger)
         wqObj.processData(beginDate, endDate)
         self.testObjects.append(wqObj)
+        #Store the results in the db
+        self.storeResults(nexradDB, wqObj, endDate.strftime('%Y-%m-%dT%H:%M:%S'), testRunDate.strftime('%Y-%m-%d %H:%M:%S'))
       else:
         if(self.logger != None):
           self.logger.error("Region: %s using invalid testObject: %s, cannot process." %(watershedName, testObjName))
@@ -930,7 +963,84 @@ class testSuite(object):
     self.sendResultsEmail(outputData, testBeginDate, testEndDate, testRunDate)
     obsDB.dbConnection.DB.close()
     nexradDB.DB.close()
-    
+
+  def storeResults(self, dbObj, wqObj, endDate, testRunDate):    
+    for station in wqObj.results:
+      platformHandle = 'dhec.%s.monitorstation' % (station)
+      platformCursor = dbObj.getPlatformInfo(platformHandle)
+      if(platformCursor != None):
+        nfo = platformCursor.fetchone()
+        if(nfo != None):        
+          #Check to see if the result type exists as a sensor on the platform, if not add it.
+          sensorId = dbObj.addSensor('overall_result', 'units', platformHandle, 1, 0, 1, None, True)        
+          if(sensorId != None and sensorId != -1):
+            mVals = []
+            mVals.append(wqObj.results[station].ensemblePrediction)            
+            if(dbObj.addMeasurement('overall_result', 'units',
+                                               platformHandle,
+                                               endDate,
+                                               nfo['fixed_latitude'], nfo['fixed_longitude'],
+                                               0,
+                                               mVals,
+                                               1,
+                                               False,
+                                               testRunDate) != True):
+              if(self.logger != None):
+                self.logger.error("Unable to add overall_result to database. %s" % (dbObj.getErrorInfo()))
+            else:
+              self.logger.debug("Added overall_result: %d to database." % (wqObj.results[station].ensemblePrediction))
+          else:
+            if(self.logger != None):
+                self.logger.error("Unable to find or add sensor id for platform: %s obs: overall_result(units). %s"\
+                                   % (platformHandle, dbObj.getErrorInfo()))
+          #Check to see if the result type exists as a sensor on the platform, if not add it.
+          sensorId = dbObj.addSensor('mlr_result', 'units', platformHandle, 1, 0, 1, None, True)        
+          if(sensorId != None and sensorId != -1):
+            del mVals[:]
+            mVals.append(wqObj.results[station].mlrPrediction)            
+            if(dbObj.addMeasurement('mlr_result', 'units',
+                                               platformHandle,
+                                               endDate,
+                                               nfo['fixed_latitude'], nfo['fixed_longitude'],
+                                               0,
+                                               mVals,
+                                               1,
+                                               False,
+                                               testRunDate) != True):
+              if(self.logger != None):
+                self.logger.error("Unable to add mlr_result to database. %s" % (dbObj.getErrorInfo()))
+            else:
+              self.logger.debug("Added mlr_result: %d to database." % (wqObj.results[station].mlrPrediction))
+          else:
+            if(self.logger != None):
+                self.logger.error("Unable to find or add sensor id for platform: %s obs: mlr_result(units). %s"\
+                                   % (platformHandle, dbObj.getErrorInfo()))
+          #Check to see if the result type exists as a sensor on the platform, if not add it.
+          sensorId = dbObj.addSensor('cart_result', 'units', platformHandle, 1, 0, 1, None, True)        
+          if(sensorId != None and sensorId != -1):
+            del mVals[:]
+            mVals.append(wqObj.results[station].cartPrediction)            
+            if(dbObj.addMeasurement('cart_result', 'units',
+                                               platformHandle,
+                                               endDate,
+                                               nfo['fixed_latitude'], nfo['fixed_longitude'],
+                                               0,
+                                               mVals,
+                                               1,
+                                               False,
+                                               testRunDate) != True):
+              if(self.logger != None):
+                self.logger.error("Unable to add cart_result to database. %s" % (dbObj.getErrorInfo()))
+            else:
+              self.logger.debug("Added cart_result: %d to database." % (wqObj.results[station].cartPrediction))
+          else:
+            if(self.logger != None):
+                self.logger.error("Unable to find or add sensor id for platform: %s obs: cart_result(units). %s" %\
+                                   (platformHandle, dbObj.getErrorInfo()))
+                
+    dbObj.commit()
+    return
+
   def sendResults(self):
     self.createMapOutput()
     self.sendResultsEmail()
