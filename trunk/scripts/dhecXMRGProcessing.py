@@ -113,7 +113,10 @@ class dhecXMRGProcessing(processXMRGData):
         self.calcWeightedAvg = int(self.calcWeightedAvg)
       else:
         self.calcWeightedAvg = 0
-        
+      
+      #2011-07-25 DWR
+      #Added a processing start time to use for the row_entry_date value when we add new records to the database.
+      self.processingStartTime = time.strftime('%Y-%d-%m %H:%M:%S', time.localtime())
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
@@ -641,7 +644,8 @@ class dhecXMRGProcessing(processXMRGData):
                                                      0,
                                                      mVals,
                                                      1,
-                                                     False) != True):
+                                                     False,
+                                                     self.processingStartTime) != True):
                     if(self.logger != None):
                       self.logger.error( "%s"\
                                          %(dbConnection.getErrorInfo()) )
