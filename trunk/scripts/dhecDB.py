@@ -1,5 +1,9 @@
 """
 Revisions:
+Date: 2011-07-27
+Functions: __init__
+Changes: Added logger parameter to allow passing the logger object in.
+
 Date: 2011-06-23
 Function: getLastNHoursSummaryFromRadarPrecip
 Changes: Now we are adding the weighted averages even for values of 0 into the database. Had to rework
@@ -26,12 +30,14 @@ class dhecDB(xeniaSQLite):
   Function: __init__
   Purpose: Initializes the database object. Connects to the database passed in on the dbName parameter.
   """
-  def __init__(self, dbName, loggerName=None):
+  def __init__(self, dbName, loggerName=None, logger=None):
     xeniaSQLite.__init__(self)
     self.logger = None
     if(loggerName != None):
       self.logger = logging.getLogger(loggerName)
       self.logger.info("creating an instance of dhecDB")
+    elif(logger != None):
+      self.logger = logger
     self.totalRowsProcd = 0
     self.rowErrorCnt = 0
     self.lastErrorMsg = None
