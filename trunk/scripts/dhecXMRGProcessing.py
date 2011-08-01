@@ -1,5 +1,17 @@
 """
 Revisions:
+Date: 2011-07-28
+Function: dhecXMRGProcessing.vacuumDB
+Changes: Added function to vacuum database. Previously we were using the rain gauge processing class, however since
+we've moved away from using rain gauges, I want to retire that code base.
+
+Date: 2011-07-25
+Function: dhecXMRGProcessing.__init__
+Changes: Added member variable processingStartTime to denote the processing start time. Use if for the row_entry_date column  
+  when adding records to the database.
+Function: calculateWeightedAverage
+Changes: Use the processingStartTime member to set the rowEntryDate parameter in the addMeasurement db function call. 
+
 Date: 2011-06-23
 Function: getLatestHourXMRGData
 Changes: Implemented datetime object use to clean up the date calculations.
@@ -120,22 +132,16 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
-        self.logger.critical( "Exception occured:", exc_info=1 )
+        self.logger.exception(E)
       else:
         print(traceback.print_exc())
 
-  def procTraceback(self):   
-    exceptionType, exceptionValue, exceptionTraceback = sys.exc_info()
-    
-    return(repr(traceback.format_exception(exceptionType, 
-                                    exceptionValue,
-                                    exceptionTraceback)))
   def importFiles(self, importDirectory=None):
     try:
       if(importDirectory == None):
         importDirectory = self.importDirectory
       
-      db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
+      db = dhecDB(self.configSettings.dbSettings['dbName'], None, self.logger)
       if(self.logger != None):
         self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
       if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
@@ -172,7 +178,7 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
-        self.logger.critical( "Exception occured:", exc_info=1 )
+        self.logger.exception(E)
       else:
         print(traceback.print_exc())
       
@@ -182,10 +188,10 @@ class dhecXMRGProcessing(processXMRGData):
     from pytz import timezone
 
     try: 
-      self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True)
+      self.remoteFileDL = getRemoteFiles.remoteFileDownload( self.configSettings.baseURL, self.configSettings.xmrgDLDir, 'b', False, None, True, self.logger)
 
       #Clean out any data older than xmrgKeepLastNDays.
-      db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
+      db = dhecDB(self.configSettings.dbSettings['dbName'], None, self.logger)
       if(self.logger != None):
         self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
       if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
@@ -245,20 +251,25 @@ class dhecXMRGProcessing(processXMRGData):
                 break          
           dbCursor.close()
                     
+      if(self.logger != None):
+        self.logger.debug( "Date/times missing in XMRG database: %s" % (dateList))
       for date in dateList:
         xmrgFilename = self.buildXMRGFilename(date,False)
+        if(self.logger != None):
+          self.logger.info( "Date: %s XMRG Filename: %s" %(date,xmrgFilename))
         #Now we try to download the file.
         fileName = self.getXMRGFile(xmrgFilename)
         if( fileName != None ):
-          self.logger.info( "Processing XMRG File: %s" %(fileName))
+          if(self.logger != None):
+            self.logger.info( "Processing XMRG File: %s" %(fileName))
           self.processXMRGFile(fileName, db)
         else:
-          self.logger.error( "Unable to download file: %s" %(xmrgFilename))
+          self.logger.error( "Date: %s Unable to download file: %s" %(date, xmrgFilename))
           
     except Exception, E:
       self.lastErrorMsg = str(E) 
       if(self.logger != None):
-        self.logger.critical( "Exception occured:", exc_info=1 )
+        self.logger.exception(E)
       else:
         print(traceback.print_exc())
     
@@ -470,7 +481,7 @@ class dhecXMRGProcessing(processXMRGData):
       except Exception, E:
         self.lastErrorMsg = str(E)
         if(self.logger != None):
-          self.logger.critical( "Exception occured:", exc_info=1 )
+          self.logger.exception(E)
         else:
           print(traceback.print_exc())
         return(False)
@@ -592,7 +603,7 @@ class dhecXMRGProcessing(processXMRGData):
       except Exception, E:
         self.lastErrorMsg = str(E)
         if(self.logger != None):
-          self.logger.critical( "Exception occured:", exc_info=1 )
+          self.logger.exception(E)
         else:
           print(traceback.print_exc())
         return(False)
@@ -677,7 +688,7 @@ class dhecXMRGProcessing(processXMRGData):
     except Exception, E:
       self.lastErrorMsg = str(E)
       if(self.logger != None):
-        self.logger.critical( "Exception occured:", exc_info=1 )
+        self.logger.exception(E)
       else:
         print(self.lastErrorMsg)        
       return(False)
@@ -687,7 +698,7 @@ class dhecXMRGProcessing(processXMRGData):
     if(self.logger != None):
       self.logger.debug("Entering createWatershedSummaries.")
       
-    db = dhecDB(self.configSettings.dbSettings['dbName'], self.configSettings.loggerName)
+    db = dhecDB(self.configSettings.dbSettings['dbName'], None, self.logger)
     if(self.logger != None):
       self.logger.debug("Loading spatialite: %s" %(self.configSettings.spatiaLiteLib))
     if(db.loadSpatiaLiteLib(self.configSettings.spatiaLiteLib) == False):
@@ -717,6 +728,28 @@ class dhecXMRGProcessing(processXMRGData):
       self.calculateWeightedAverages(date,date,db,True,rainGaugeList)   
     db.DB.close()
     
+  """
+  Function: vacuumDB
+  Purpose: Frees up unused space in the database.
+  """  
+  def vacuumDB(self):
+    from stat import *
+    
+    retVal = False
+    if(self.logger != None):
+      stats = os.stat(self.configSettings.dbSettings['dbName'])
+      self.logger.debug("Begin database vacuum. File size: %d" % (stats[ST_SIZE]))      
+    db = dhecDB(self.configSettings.dbSettings['dbName'], None, self.logger)
+    if(db.vacuumDB() != None):
+      if(self.logger != None):
+        stats = os.stat(self.configSettings.dbSettings['dbName'])
+        self.logger.debug("Database vacuum completed. File size: %d" % (stats[ST_SIZE]))      
+      retVal = True
+    else:
+      self.logger.error("Database vacuum failed: %s" % (db.lastErrorMsg))
+      db.lastErrorMsg = ""
+    db.DB.close()
+    return(retVal)
   
     
 if __name__ == '__main__':   
