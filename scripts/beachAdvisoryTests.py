@@ -39,61 +39,96 @@ class predictionLevels(object):
       return "HIGH"
     else:
       return "NO TEST"
-""" 
-Class wqTest
-Purpose: This is the base class for the actually water quality prediction process.
- Each watershed area has its own MLR and CART tests, so this base class doesn't implement
- anything other than stub functions for them.
+    
 """
-class wqEquations(object):
-  def __init__(self, station):
-    self.station = station  #The station that this object represents.
-    self.log10MLRResult = -1 #The natural log result from the mlr/regression formula.
-    self.mlrResult = -1 #The exp(log10MLRResult) result. 
-    self.mlrPrediction = predictionLevels.NO_TEST  #The prediction for the regression formula.
-    self.cartPrediction = predictionLevels.NO_TEST #The prediction for the cart model.
-    self.ensemblePrediction = predictionLevels.NO_TEST #The overall prediction result.
-    self.data = {} #Data used for the tests.
-
+Class: predictionTest
+Purpose: This is the base class for our various prediction tests.
+"""    
+class predictionTest(object):
   """
-  Function: runTests
-  Purpose: Runs the suite of tests, current a regression formula and CART model, then tabulates
-    the overall prediction. 
-  Parameters:
-    regressionFormula is the formula to use to for the regression calculation. The observation data
-      is in a print type format, %(radar_precipitation_24)f. The data is applied from the regressionDataDict
-      and then evaluated. 
-    regressionDataDict - A data dictionary keyed on the variable names in the formula. String subsitution
-      is done then the formula is evaled.
-    cartModel is the formula to use to for the Cart prediction. The observation data
-      is in a print type format, %(radar_precipitation_24)f. The data is applied from the cartDataDict
-      and then evaluated. 
-    cartDataDict - A data dictionary keyed on the variable names in the CART tree. String subsitution
-      is done then the formula is evaled.
+  Function: __init__
+  Purpose: Initialize the object.
+  Parameters: 
+    formula - a string with the appropriate string substitution parameters that the runTest function will
+      apply the data against.
+    name - A string identifier for the test.
   Return:
-    A predictionLevels value.
-  """    
-  def runTests(self, regressionFormula, regressionDataDict, cartModel, cartDataDict):
-      self.data = regressionDataDict.copy()
-      self.mlrTest(regressionFormula, regressionDataDict)
-      self.cartTest(cartModel, cartDataDict)
-      return(self.overallPrediction())
-
   """
-  Function: overallPrediction
-  Purpose: From the models used, averages their predicition values to come up with the overall value.
+  def __init__(self, formula, name=None):
+    self.formula = formula
+    self.predictionLevel = predictionLevels.NO_TEST
+    self.name = name
+  """
+  Function: runTest
+  Purpose: Uses the data parameter to do the string substitutions then evaluate the formula.
+  Parameters: 
+    data - a dictionary with the appropriate keys to do the string subs.
+  Return:
+    The result of evaluating the formula.
+  """
+  def runTest(self, data):
+    return(predictionLevels.NO_TEST)
+  
+  """
+  Function: getResults
+  Purpose: Returns a dictionary with the computational variables that went into the predictionLevel. For instance, for an
+    MLR calculation, there are intermediate results such as the log10 result and the final result.
   Parameters:
     None
+  Return: A dictionary.
+  """
+  def getResults(self):
+    results = {'predictionLevel' : self.predictionLevel}
+    return(results)
+
+"""
+Class: mlrPredictionTest
+Purpose: Prediction test for a linear regression formula.  
+"""
+class mlrPredictionTest(predictionTest):
+  """
+  Function: __init__
+  Purpose: Initialize the object.
+  Parameters: 
+  formula - a string with the appropriate string substitution parameters that the runTest function will
+    apply the data against.
+  lowCategoryLimit - A float that defines the lower limit which categorizes the test result as a LOW probability.
+  highCategoryLimit - A float that defines the high limit which categorizes the test result as a HIGH probability.
   Return:
-    A predictionLevels value.
-  """      
-  def overallPrediction(self):
-    result = predictionLevels.NO_TEST
-    if(self.mlrPrediction != predictionLevels.NO_TEST and self.cartPrediction != predictionLevels.NO_TEST):
-      self.ensemblePrediction = round(((self.mlrPrediction + self.cartPrediction) / 2.0))
-      self.ensemblePrediction = int(self.ensemblePrediction)
-    return(self.ensemblePrediction)
+  """
+  def __init__(self, formula, name):
+    predictionTest.__init__(self, formula, name)
+    self.lowCategoryLimit = 104.0
+    self.highCategoryLimit = 500.0
+    self.mlrResult = None
+    self.log10MLRResult = None
   
+  """
+  Function: setCategoryLimits
+  Purpose: To catecorize MLR results, we use a high and low limit.
+  Parameters:
+    lowLimit - Float representing the value, equal to or below, which is considered a low prediction.
+    highLimit  - Float representing the value, greater than,  which is considered a high prediction.
+  """
+  def setCategoryLimits(self, lowLimit, highLimit):
+    self.lowCategoryLimit = low
+    self.highCategoryLimit = high
+  """
+  Function: runTest
+  Purpose: Uses the data parameter to do the string substitutions then evaluate the formula.
+    Prediction is a log10 formula.
+  Parameters: 
+    data - a dictionary with the appropriate keys to do the string subs.
+  Return:
+    The result of evaluating the formula.
+  """
+  def runTest(self, data):
+    formula = self.formula % (data)
+    self.log10MLRResult = eval(formula)
+    self.mlrResult = math.pow(10,self.log10MLRResult)            
+    self.mlrCategorize()
+    return(self.predictionLevel)
+
   """
   Function: mlrCategorize
   Purpose: For the regression formula, this catergorizes the value. 
@@ -103,46 +138,423 @@ class wqEquations(object):
     A predictionLevels value.
   """
   def mlrCategorize(self):
-    self.mlrPrediction = predictionLevels.NO_TEST
+    self.predictionLevel = predictionLevels.NO_TEST
     if(self.mlrResult != None):
-      if(self.mlrResult < 104.0):
-        self.mlrPrediction = predictionLevels.LOW
-      elif(self.mlrResult >= 500.0):
-        self.mlrPrediction = predictionLevels.HIGH
+      if(self.mlrResult < self.lowCategoryLimit):
+        self.predictionLevel = predictionLevels.LOW
+      elif(self.mlrResult >= self.highCategoryLimit):
+        self.predictionLevel = predictionLevels.HIGH
       else:      
-        self.mlrPrediction = predictionLevels.MEDIUM
-    return(self.mlrPrediction)
+        self.predictionLevel = predictionLevels.MEDIUM
+  """
+  Function: getResults
+  Purpose: Returns a dictionary with the variables that went into the predictionLevel.
+  Parameters:
+    None
+  Return: A dictionary.
+  """
+  def getResults(self):
+    results = {'mlrPrediction' : predictionLevels(self.predictionLevel).__str__(), 
+               'log10MLRResult' : self.log10MLRResult,
+               'mlrResult' : self.mlrResult}
+    return(results)
+    
+
+"""
+Class: cartPredictionTest
+Purpose: DHEC CART prediction.  
+"""
+class cartPredictionTest(predictionTest):
+  def __init__(self, formula, name):
+    predictionTest.__init__(self, formula, name)
   
   """
-  Function: mlrTest
-  Purpose; This is the base function that child objects will override to put in the specific regression formula
-    for that area.
-  Parameters:
-    data - A data dictionary keyed on the variable names in the formula. String subsitution
-      is done then the formula is evaled.
+  Function: runTest
+  Purpose: Excutes the if/then decision tree code to calculate the CART prediction level. 
+    NOTE: Any CART code needs to have a variable named "cartPrediction" which contains the predicted level
+    after the exec function is run on the code.
+  Parameter:
+    data - A dictionary populated with all the variables needed for the string substitutions.
   Return:
-    The prediction value, LOW, MEDIUM or HIGH.
+    Prediction level: LOW, MEDIUM, or HIGH.
   """
-  def mlrTest(self, regressionFormula, data):
-    formula = regressionFormula % (data)
-    self.log10MLRResult = eval(formula)
-    self.mlrResult = math.pow(10,self.log10MLRResult)            
-    return(self.mlrCategorize())
+  def runTest(self, data):
+    decisionTree = self.formula % (data)
+    exec decisionTree
+    self.predictionLevel = cartPrediction                         
+    return(self.predictionLevel)
+
+  def getResults(self):
+    results = {'cartPrediction' : predictionLevels(self.predictionLevel).__str__()}
+    return(results)
+
+"""
+Class: outputResults
+Purpose: Base class for creating objects to output the results in various formats, email, kml, ect.
+"""
+class outputResults(object):
+  def __init__(self, xmlConfigFile, logger=None):
+    self.configFile = xmlConfigFile
+    self.logger = logger
+    #Are we outputing the data used in the predictions?
+    tag = "//environment/stationTesting/results/outputDataUsed"
+    self.outputData = self.configFile.getEntry(tag)    
+    if(self.outputData != None):
+      self.outputData = int(self.outputData)
+      self.varMapping = {}
+      #If we are going to ouput the data used for the predictions, we get the readable variable names/descriptions
+      #and create a mapping.
+      try:
+        tag = "//environment/stationTesting/results/inputVariableNames"
+        variableList = self.configFile.getListHead(tag)
+        if(variableList != None):
+          for variable in self.configFile.getNextInList(variableList):
+            entry = {}
+            variableName = variable.get('id')
+            displayName = self.configFile.getEntry('displayName', variable)
+            if(displayName != None):
+              entry['displayName'] = displayName
+            else:
+               entry['displayName'] = variableName
+            desc = self.configFile.getEntry('description', variable)
+            if(desc != None):
+              entry['description'] = desc
+            else:
+              entry['description'] = variableName            
+            self.varMapping[variableName] = entry
+      except Exception, e:
+        if(self.logger != None):
+          self.logger.exception(e)
+    else:
+      self.outputData = 0
+
+  def createOutput(self, testObjects, beginDate, endDate, testRunDate):
+    return(False)
+  
+class outputKMLResults(outputResults):
+  def __init__(self, xmlConfigFile, logger=None):
+    outputResults.__init__(self, xmlConfigFile, logger)
+
+  def createOutput(self, testObjects, beginDate, endDate, testRunDate):
+    from pykml import kml
+    tag = "//environment/stationTesting/results/outputResultList/outputType[@id=\"kml\"]/kmlFilePath"
+    kmlFilepath = self.configFile.getEntry(tag)
+
+    if(kmlFilepath != None):
+
+      nexradDBSettings = self.configFile.getDatabaseSettingsEx('//environment/stationTesting/database/nexradDatabase/')
+      nexradDB = dhecDB(nexradDBSettings['dbName'],"dhec_testing_logger")
+          
+      pmTableBegin = """<table>"""
+      pmTableEnd = """</table>"""
+      pmTemplate = """<tr><td>%(region)s</td></tr>
+        <tr><td>Station:</td><td>%(station)s</td><td>%(description)s</td></tr>
+        <tr><td>Prediction for Date:</td><td>%(endDate)s</td></tr>        
+        <tr><td>Date Tests Run:</td><td>%(testRunDate)s</td></tr>        
+        <tr><td>Overall Prediction:</td><td>%(ensemblePrediction)s</td></tr>
+        <tr><td>MLR:</td><td>%(mlrPrediction)s</td><td>log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</td></tr>
+        <tr><td>Cart:</td><td>%(cartPrediction)s</td></tr>"""
+        
+      try:        
+        self.logger.info("Creating DHEC ETCOC Prediction KML file: %s" % (kmlFilepath))
+        etcocKML = kml.KML()
+        doc = etcocKML.createDocument("DHEC ETCOC Predictions")
+        doc.appendChild(etcocKML.createStyle(
+            id="no_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/no_light16x16.png"))
+        ))
+        doc.appendChild(etcocKML.createStyle(
+            id="low_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/green_light16x16.png"))            
+        ))
+        doc.appendChild(etcocKML.createStyle(
+            id="med_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/yellow_light16x16.png"))            
+        ))
+        doc.appendChild(etcocKML.createStyle(
+            id="hi_prediction",
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/red_light16x16.png"))                        
+        ))
+        for wqObj in testObjects:      
+          
+          #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
+          #alpha numeric order.          
+          stationKeys = wqObj.results.keys()
+          stationKeys.sort()
+          
+          for station in stationKeys:
+            desc = ""
+            #Get the geo location information for the station
+            platformHandle = "dhec.%s.monitorstation" % (station)
+            dbCursor = nexradDB.getPlatformInfo(platformHandle)
+            latitude = 0.0
+            longitude = 0.0
+            stationDesc = ""
+            if(dbCursor != None):
+              row = dbCursor.fetchone()
+              if(row != None):
+                latitude = row['fixed_latitude'] 
+                longitude = row['fixed_longitude'] 
+                stationDesc = row['description']
+            else:
+              self.logger.error("ERROR: Unable to get platform: %s data. %s" % (platformHandle, nexradDB.getErrorInfo()))
+            desc += pmTableBegin
+            tstObj = wqObj.results[station]
+            tmpltDict = { 'region' : wqObj.regionName,
+              'station' : station,
+              'ensemblePrediction' : predictionLevels(tstObj.ensemblePrediction).__str__(),
+              'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M'),
+              'endDate' : endDate.strftime('%Y-%m-%d %H:%M'),
+              'description' : stationDesc}
+            
+            #Get any specific computed variables from the test object. This is not the data that
+            #the equations used, but any intermediate values calculated while coming up with the prediction.
+            for test in tstObj.tests:
+              results = test.getResults()
+              for resultType in results:
+                tmpltDict[resultType] = results[resultType]
+                
+            desc += pmTemplate % (tmpltDict)
+            tmpltDict.clear()
+            desc += pmTableEnd        
+            predictionStyle = "#no_prediction"
+            if(tstObj.ensemblePrediction == predictionLevels.LOW):
+              predictionStyle = "#low_prediction"
+            elif(tstObj.ensemblePrediction == predictionLevels.MEDIUM):
+              predictionStyle = "#med_prediction"
+            elif(tstObj.ensemblePrediction == predictionLevels.HIGH):
+              predictionStyle = "#hi_prediction"              
+            pm = etcocKML.createPlacemark(station, latitude, longitude, desc, predictionStyle)
+            #Build a custom xml section to hold the data
+            dataKML = etcocKML.xml.createElement("ExtendedData")
+            dataKmlTag = etcocKML.xml.createElement('Data')
+            dataKmlTag.setAttribute("name", "station")
+            dataValueTag = etcocKML.xml.createElement('value')
+            dataValueTag.appendChild(etcocKML.xml.createTextNode(station))
+            dataKmlTag.appendChild(dataValueTag)
+            dataKML.appendChild(dataKmlTag)
+            
+            if(self.outputData):
+              #Get the region specific variables, we want to skip over the station name and coefficient.
+              dataKmlTag = etcocKML.xml.createElement('Data')
+              dataKmlTag.setAttribute("name", "data")
+              dataValueTag = etcocKML.xml.createElement('value')
+              dataUsed = "<table>"
+              for key in tstObj.data:
+                if(key != "station"):
+                  varInfo = self.varMapping[key]
+                  val = tstObj.data[key]
+                  if(val == -9999):
+                    val = "Data unavailable."                  
+                  if(type(val) != str):
+                    dataUsed += "<tr><td>%s</td><td>%f</td></tr>" % (varInfo['displayName'], val)
+                  else:
+                    dataUsed += "<tr><td>%s</td><td>%s</td></tr>" % (varInfo['displayName'], val)
+              dataUsed += "</table>"
+              dataUsed = dataUsed.lstrip()
+              dataUsed = dataUsed.rstrip()
+              dataValueTag.appendChild(etcocKML.xml.createTextNode(dataUsed))
+              dataKmlTag.appendChild(dataValueTag)
+              dataKML.appendChild(dataKmlTag)
+            pm.appendChild(dataKML)
+            
+            doc.appendChild(pm)
+        etcocKML.root.appendChild(doc)  
+        kmlFile = open(kmlFilepath, "w")
+        kmlFile.writelines(etcocKML.writepretty())
+        kmlFile.close()
+        return(True)
+      except Exception, e:
+        if(self.logger != None):
+          self.logger.exception(e)
+                
+    else:
+      self.logger.debug("Cannot write KML file, no filepath provided in config file.")
+    return(False)
+    
+class outputEmailResults(outputResults):
+  def __init__(self, xmlConfigFile, logger=None):
+    outputResults.__init__(self, xmlConfigFile, logger)
+        
+  def createOutput(self, testObjects, beginDate, endDate, testRunDate):
+    from xeniatools.utils import smtpClass 
+    import string
+    subjectTmpl = "[DHEC] Water Quality Prediction Results - %(endDate)s"
+    header =  """Predictions for Date: %(endDate)s
+Test Execution Date: %(testRunDate)s
+"""
+
+    regionHdr = """--------%s--------
+    
+"""    
+    msgTemplate = """Station: %(station)s
+      Overall Prediction: %(ensemblePrediction)s
+"""
+              #MLR: %(mlrPrediction)s log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f
+              #Cart: %(cartPrediction)s"""
+    if(self.outputData):
+    #  msgTemplate += """
+    #          Coefficient: %(station_coefficient)f
+    #          
+#"""
+      dataTemplate = """
+Data used for station tests: 
+%(data)s
+    
+
+"""
+    else:
+      msgTemplate += """
+"""      
+      
+    try:       
+      emailSettings = self.configFile.getEmailSettingsEx('//environment/stationTesting/results/outputResultList/outputType[@id=\"email\"]/emailSettings')
+      #Loop through the results objects to get the individual station test results.
+      body = header % ({'endDate' : endDate.strftime('%Y-%m-%d'), 'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M')})
+      for wqObj in testObjects:
+        body += regionHdr % (wqObj.regionName)
+        #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
+        #alpha numeric order.          
+        stationKeys = wqObj.results.keys()
+        stationKeys.sort()
+        dataUsed = ""
+        for station in stationKeys:
+          tstObj = wqObj.results[station]
+
+          #If we want to output the data, and we have not already populate the station non-specific variables.
+          if(self.outputData and len(dataUsed) == 0):
+            #Get the region specific variables, we want to skip over the station name and coefficient.
+            for key in tstObj.data:
+              if(key != "station" and key != "station_coefficient"):
+                val = tstObj.data[key]
+                varInfo = self.varMapping[key]                
+                if(val == -9999):
+                  val = "Data unavailable."
+                if(type(val) != str):
+                  dataUsed += "%s: %f\n" % (varInfo['displayName'], val)
+                else:
+                  dataUsed += "%s: %s\n" % (varInfo['displayName'], val)
+          
+          #Build the string substitution dictionary for the message template.
+          if('station_coefficient' in tstObj.data):
+            stationCo = tstObj.data['station_coefficient']
+          else:
+            stationCo = 0.0
+          tmpltDict = {'station' : station,
+            'ensemblePrediction' : predictionLevels(tstObj.ensemblePrediction).__str__(),
+            'station_coefficient' : stationCo}
+          #Get any specific computed variables from the test object. This is not the data that
+          #the equations used, but any intermediate values calculated while coming up with the prediction.
+          for test in tstObj.tests:
+            results = test.getResults()
+            for resultType in results:
+              tmpltDict[resultType] = results[resultType]
+          
+          body += (msgTemplate % (tmpltDict))
+          tmpltDict.clear()
+        if(self.outputData):
+          body += (dataTemplate % {'data' : dataUsed})                      
+      subject =  subjectTmpl % ({'endDate' : endDate.strftime('%Y-%m-%d')})
+      smtp = smtpClass(emailSettings['server'], emailSettings['from'], emailSettings['pwd'])
+      smtp.from_addr("%s@%s" % (emailSettings['from'],emailSettings['server']))
+      smtp.rcpt_to(emailSettings['toList'])
+      smtp.subject(subject)
+      smtp.message(body)
+      smtp.send()      
+      if(self.logger != None):
+        self.logger.info("Sending email alerts.")
+      return(True)
+    except Exception,e:
+      if(self.logger != None):
+        self.logger.exception(e)                             
+    return(False)
+    
+""" 
+Class wqTest
+Purpose: This is the base class for the actually water quality prediction process.
+ Each watershed area has its own MLR and CART tests, so this base class doesn't implement
+ anything other than stub functions for them.
+"""
+class wqEquations(object):
+  """
+  Function: __init__
+  Purpose: Initializes the object with all the tests to be performed for the station.
+  Parameters:
+    station - The name of the station this object is being setup for.
+    testsSetup - A list of objects that detail the tests. Each test object must contain the following format:
+        {'testId' : testsSetupInfo, 
+         'testString' : predictionTestString, 
+         'testObject' : predictionTstObj})
+    logger - A reference to the logging object to use.
+  """
+  def __init__(self, station, testsSetup, logger=None):
+    self.station = station  #The station that this object represents.
+    self.tests = []
+    self.ensemblePrediction = predictionLevels.NO_TEST
+    for testNfo in testsSetup:
+      #Retrieve the processing class      
+      testObj = globals()[testNfo['testObject']]
+      #Now we instantiate the object.
+      predictionObj = testObj(testNfo['testString'], testNfo['testId'])      
+      self.tests.append(predictionObj)
+    self.data = {} #Data used for the tests.
+    self.logger = logger
 
   """
-  Function: cartTest
-  Purpose: performs the CART decision tree calculations. 
-    data - is a dictionary keyed by the various data names used defined in the tree nodes. We use
-      variable substitution to build the tree nodes, then call eval to evaluate it.
-  Return:
-    The prediction value, LOW, MEDIUM or HIGH.
+  Function: addTest
+  Purpose: Adds a prediction test to the list of tests.
+  Parameters:
+    predictionTestObj -  A predictionTest object to use for testing. 
   """
+  def addTest(self, predictionTestObj):
+    self.tests.append(predictionTestObj)
   
-  def cartTest(self, cartModel, data):
-    decisionTree = cartModel % (data)
-    exec decisionTree
-    self.cartPrediction = cartPrediction                         
-    return(self.cartPrediction)
+  """
+  Function: runTests
+  Purpose: Runs the suite of tests, current a regression formula and CART model, then tabulates
+    the overall prediction. 
+  Parameters:
+    dataDict - A data dictionary keyed on the variable names in the CART tree. String subsitution
+      is done then the formula is evaled.
+  Return:
+    A predictionLevels value representing the overall prediction level. This is the average of the individual 
+    prediction levels.
+  """    
+  def runTests(self, dataDict):
+    self.data = dataDict.copy()
+    for testObj in self.tests:
+      testObj.runTest(dataDict)
+      if(self.logger != None):
+        self.logger.debug("Test: %s Prediction: %d" %(testObj.name, testObj.predictionLevel))
+      
+    self.overallPrediction()
+  """
+  Function: overallPrediction
+  Purpose: From the models used, averages their predicition values to come up with the overall value.
+  Parameters:
+    None
+  Return:
+    A predictionLevels value.
+  """      
+  def overallPrediction(self):
+    allTestsComplete = True
+    testCnt = float(len(self.tests))
+    if(testCnt):
+      sum = 0
+      for testObj in self.tests:
+        #Each test must have been executed, if not we cannot compute the overall prediction level.
+        if(testObj.predictionLevel != predictionLevels.NO_TEST):
+          sum += testObj.predictionLevel
+        else:
+          allTestsComplete = False
+          break
+      if(allTestsComplete):
+        self.ensemblePrediction = int(round(sum / testCnt))
+           
+    if(self.logger != None):
+      self.logger.debug("Overal Prediction: %d" %(self.ensemblePrediction))
+    return(self.ensemblePrediction)
+  
 
 """
 Class wqDataAccess
@@ -153,12 +565,12 @@ Purpose: This is the base class for retrieving the data for the tests. This clas
 class wqDataAccess(object):
   NO_DATA = -9999.0
   def __init__(self, configFile, obsDb, nexradDb, regionName="", logger=None):
-    self.obsDb = obsDb
-    self.nexradDb = nexradDb
-    self.logger = logger
-    self.configFile = configFile
-    self.regionName = regionName
-    self.results = {}
+    self.obsDb = obsDb              #The database object connected to the observations database.
+    self.nexradDb = nexradDb        #Database object connected to the NEXRAD database.
+    self.logger = logger            #The logger object.    
+    self.configFile = configFile    #A reference to an xmlConfigFile object.
+    self.regionName = regionName    #The region this data object is for.
+    self.results = {}               #Dictionary of wqEquation objects keyed on the stations for the test results.
   
   """
   Function: getAverageForObs\
@@ -204,6 +616,17 @@ class wqDataAccess(object):
     return(None)
 
   """
+  Function: addTest
+  Purpose: Adds a prediction test to the list of tests.
+  Parameters:
+    predictionTest - A string that represents the prediction formula to use. Uses parameter substition to populate
+      the formala.
+    predictionTestObj -  A string that represents the object to create for the predictionTest formula.
+  """
+  def addTest(self, predictionTestObj):
+    self.tests.append(predictionTestObj)
+    
+  """
   Function: getData
   Purpose: This is the base function to retrieve the specific data for a given region.
   Parameters:
@@ -216,9 +639,9 @@ class wqDataAccess(object):
     return(None)
     
   def processData(self, beginDate, endDate):
-    self.logMsg(logging.INFO,
-                "Processing stations for region: %s BeginDate: %s EndDate: %s"\
-                %(self.regionName, beginDate.strftime("%Y-%m-%d %H:%M:%S"),endDate.strftime("%Y-%m-%d %H:%M:%S")))
+    if(self.logger != None):
+      self.logger.info("Processing stations for region: %s BeginDate: %s EndDate: %s"\
+                  %(self.regionName, beginDate.strftime("%Y-%m-%d %H:%M:%S"),endDate.strftime("%Y-%m-%d %H:%M:%S")))
     #Get the data used for this area's models
     data = {}
     try:
@@ -238,60 +661,80 @@ class wqDataAccess(object):
     intercept = self.configFile.getEntry(tag)
     if(intercept != None):
       data['intercept'] = float(intercept)
-      self.logMsg(logging.DEBUG, "%s intercept value %s." %(self.regionName, intercept))
+      if(self.logger != None):
+        self.logger.debug("%s intercept value %s." %(self.regionName, intercept))
     else:
-      self.logMsg(logging.ERROR, "Intercept value not available for %s, cannot continue." %(self.regionName))
+      if(self.logger != None):
+        self.logger.error("Intercept value not available for %s, cannot continue." %(self.regionName))
       return(False)
-    
-    #Get the regression equation
-    tag = "//environment/stationTesting/watersheds/watershed[@id=\"%s\"]/regressionFormula" % (self.regionName)
-    regressionFormula = self.configFile.getEntry(tag)
-    regressionFormula = regressionFormula.lstrip()
-    regressionFormula = regressionFormula.rstrip()
-    if(regressionFormula == None):
-      self.logMsg(logging.ERROR, "No regression formula found for %s, cannot continue." %(self.regionName))
-      return(False)
-    
-    #Get the CART model
-    tag = "//environment/stationTesting/watersheds/watershed[@id=\"%s\"]/cartModel" % (self.regionName)
-    cartModel = self.configFile.getEntry(tag)
-    cartModel = cartModel.lstrip()
-    cartModel = cartModel.rstrip()
-    if(cartModel == None):
-      self.logMsg(logging.ERROR, "No cart Model found for %s, cannot continue." %(self.regionName))
-      return(False)
+          
+    #Get the test equations.
+    testsSetupInfo = []
+    tag = "//environment/stationTesting/watersheds/watershed[@id=\"%s\"]/tests" % (self.regionName)
+    predictionTestList = self.configFile.getListHead(tag)
+    for predictionTest in self.configFile.getNextInList(predictionTestList):
+      testId = predictionTest.get('id')
+      predictionTestString = self.configFile.getEntry('predictionTest', predictionTest)
+      if(predictionTestString == None):
+        if(self.logger != None):        
+          self.logger.error("No formula found for %s, cannot continue." %(self.regionName))
+        return(False)      
+      predictionTestString = predictionTestString.lstrip()
+      predictionTestString = predictionTestString.rstrip()
+      predictionTstObj = self.configFile.getEntry('predictionTestObj', predictionTest)
+      if(predictionTstObj == None):
+        if(self.logger != None):        
+          self.logger.error("No formula object for %s, cannot continue." %(self.regionName))
+        return(False)
+      #Check to make sure the predictionTstObj actually exists in our namespace.
+      if(predictionTstObj in globals()):
+        testsSetupInfo.append( {'testId' : testId, 
+                                'testString' : predictionTestString, 
+                                'testObject' : predictionTstObj})
+        #Retrieve the processing class      
+        #testObj = globals()[predictionTstObj]
+        #Now we instantiate the object.
+        #predictionObj = testObj(predictionTestString, testId)      
+        #self.addTest(predictionObj)
+      else:
+        if(self.logger != None):
+          self.logger.error("Object: %s not found in the global namespace, cannot create a test object." %(predictionTestObj))
     
     tag = "//environment/stationTesting/watersheds/watershed[@id=\"%s\"]/stations" % (self.regionName)
     stationList = self.configFile.getListHead(tag)
     for station in self.configFile.getNextInList(stationList):
       stationName = station.get('id')   
       if(stationName == None):
-        self.logMsg(logging.ERROR, "No station name found for %s, skipping to next station." %(self.regionName))
+        if(self.logger != None):
+          self.logger.error("No station name found for %s, skipping to next station." %(self.regionName))
         continue
       coefficient = self.configFile.getEntry('coefficient', station)
       if(coefficient != None):
         data['station_coefficient'] = float(coefficient)
-        self.logMsg(logging.DEBUG, "%s %s coefficient value %s." %(self.regionName, stationName, coefficient))
+        if(self.logger != None):
+          self.logger.debug("%s %s coefficient value %s." %(self.regionName, stationName, coefficient))
       else:
-        self.logMsg(logging.ERROR, "coefficient value not available for %s station: %s cannot continue." %(self.regionName, stationName))
-        continue
-      self.runTests(stationName, regressionFormula, cartModel, data)  
+        if(self.logger != None):
+          self.logger.error("coefficient value not available for %s station: %s cannot continue." %(self.regionName, stationName))
+        continue            
+      self.runTests(stationName, data, testsSetupInfo)  
     return(True)
     
-  def runTests(self, stationName, regressionFormula, cartModel, data):
-    wqTest = wqEquations(stationName)
+  def runTests(self, stationName, data, testsSetupInfo):
+    wqTest = wqEquations(stationName, testsSetupInfo, self.logger)
+            
     #Run through the data, if any of the values are -9999, we didn't get a value so we
     #cannot run the tests. Let's log that out.
     dataValid = True
     for dataKey in data:
       if(data[dataKey] == -9999):
-        self.logMsg(logging.ERROR, "%s has a value of -9999, we cannot run the tests." %(dataKey))
+        if(self.logger != None):
+          self.logger.error("%s has a value of -9999, we cannot run the tests." %(dataKey))
         dataValid = False
     
     if(dataValid):
       try:
-        wqTest.runTests(regressionFormula, data, cartModel, data)
-        self.logMsg(logging.DEBUG, "Regression value: %4.2f prediction: %d Cart Prediction: %d" %(wqTest.mlrResult, wqTest.mlrPrediction, wqTest.cartPrediction))
+        wqTest.runTests(data)
       except Exception, e:
         if(self.logger != None):
           self.logger.exception(e)
@@ -305,13 +748,7 @@ class wqDataAccess(object):
     self.results[stationName] = wqTest   
 
     return(dataValid)
-
-  
-  def logMsg(self, msgLevel, msg):
-    if(self.logger != None):
-      self.logger.log(msgLevel, msg)
-    return
-    
+     
 
 class wqDataNMB2(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="NMB2", logger=None):
@@ -372,11 +809,14 @@ class wqDataNMB2(wqDataAccess):
       range = tideData['HH']['value'] - tideData['LL']['value']   
       data['range'] =  range;
     except WebFault, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      if(self.logger != None):
+        self.logger.error("Error retrieving tide data. Error: %s" %(e))
     except Exception, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      if(self.logger != None):
+        self.logger.error("Error retrieving tide data. Error: %s" %(e))
     
-    self.logMsg(logging.DEBUG, pformat(data))
+    if(self.logger != None):
+      self.logger.debug(pformat(data))
     
     return(data)
  
@@ -428,7 +868,7 @@ class wqDataNMB3(wqDataAccess):
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
     
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -437,9 +877,9 @@ class wqDataMB1(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="MB1", logger=None):
     wqDataAccess.__init__(self,configFile, obsDb, nexradDb, regionName, logger)
       
-  def runTests(self, stationName, regressionFormula, cartModel, data):    
+  def runTests(self, stationName, data, testsSetupInfo):    
     data['station'] = stationName
-    wqDataAccess.runTests(self, stationName, regressionFormula, cartModel, data)
+    wqDataAccess.runTests(self, stationName, data, testsSetupInfo)
     
   def getData(self, beginDate, endDate):
     data = {}
@@ -498,7 +938,7 @@ class wqDataMB1(wqDataAccess):
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
     
     
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -550,7 +990,7 @@ class wqDataMB2(wqDataAccess):
       nos8661070_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(nos8661070_wind_dir)
       data['nos8661070_wind_dir'] = nos8661070_compass_dir
     
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -558,9 +998,9 @@ class wqDataMB3(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="MB3", logger=None):
     wqDataAccess.__init__(self,configFile, obsDb, nexradDb, regionName, logger)
       
-  def runTests(self, stationName, regressionFormula, cartModel, data):    
+  def runTests(self, stationName, data, testsSetupInfo):
     data['station'] = stationName
-    wqDataAccess.runTests(self, stationName, regressionFormula, cartModel, data)
+    wqDataAccess.runTests(self, stationName, data, testsSetupInfo)
     
   def getData(self, beginDate, endDate):
     data = {}
@@ -616,7 +1056,7 @@ class wqDataMB3(wqDataAccess):
     else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
            
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -624,9 +1064,9 @@ class wqDataMB4(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="MB4", logger=None):
     wqDataAccess.__init__(self,configFile, obsDb, nexradDb, regionName, logger)
       
-  def runTests(self, stationName, regressionFormula, cartModel, data):    
+  def runTests(self, stationName, data, testsSetupInfo):    
     data['station'] = stationName
-    wqDataAccess.runTests(self, stationName, regressionFormula, cartModel, data)
+    wqDataAccess.runTests(self, stationName, data, testsSetupInfo)
     
   def getData(self, beginDate, endDate):
     data = {}
@@ -704,7 +1144,7 @@ class wqDataMB4(wqDataAccess):
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
            
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -712,9 +1152,9 @@ class wqDataSS(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="Surfside", logger=None):
     wqDataAccess.__init__(self,configFile, obsDb, nexradDb, regionName, logger)
       
-  def runTests(self, stationName, regressionFormula, cartModel, data):    
+  def runTests(self, stationName, data, testsSetupInfo):    
     data['station'] = stationName
-    wqDataAccess.runTests(self, stationName, regressionFormula, cartModel, data)
+    wqDataAccess.runTests(self, stationName, data, testsSetupInfo)
     
   def getData(self, beginDate, endDate):
     data = {}
@@ -783,7 +1223,7 @@ class wqDataSS(wqDataAccess):
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
            
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -791,9 +1231,9 @@ class wqDataGC(wqDataAccess):
   def __init__(self, configFile, obsDb, nexradDb, regionName="Gardcty", logger=None):
     wqDataAccess.__init__(self,configFile, obsDb, nexradDb, regionName, logger)
       
-  def runTests(self, stationName, regressionFormula, cartModel, data):    
+  def runTests(self, stationName, data, testsSetupInfo):    
     data['station'] = stationName
-    wqDataAccess.runTests(self, stationName, regressionFormula, cartModel, data)
+    wqDataAccess.runTests(self, stationName, data, testsSetupInfo)
     
   def getData(self, beginDate, endDate):
     data = {}
@@ -862,7 +1302,7 @@ class wqDataGC(wqDataAccess):
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
            
-    self.logMsg(logging.DEBUG, pformat(data))
+    self.logger.debug(pformat(data))
     
     return(data)
 
@@ -896,16 +1336,17 @@ class testSuite(object):
     
   """
   def runTests(self, beginDate, endDate):
+       
     testRunDate = datetime.datetime.now(timezone('US/Eastern'))
 
     obsDBSettings = self.configFile.getDatabaseSettingsEx('//environment/stationTesting/database/obsDatabase/')
     obsDB = dbXenia()
     #def connect(self, dbFilePath=None, user=None, passwd=None, host=None, dbName=None ):
     if(obsDB.connect(None, obsDBSettings['dbUser'], obsDBSettings['dbPwd'], obsDBSettings['dbHost'], obsDBSettings['dbName']) != True):
-      self.logMsg(logging.ERROR, "Unable to connect to observation database: %s @ %s" %(obsDBSettings['dbName'], obsDBSettings['dbHost']))
+      self.logger.error("Unable to connect to observation database: %s @ %s" %(obsDBSettings['dbName'], obsDBSettings['dbHost']))
       sys.exit(-1)
     else:
-      self.logMsg(logging.INFO, "Connected to %s @ %s" %(obsDBSettings['dbName'], obsDBSettings['dbHost']))
+      self.logger.info("Connected to %s @ %s" %(obsDBSettings['dbName'], obsDBSettings['dbHost']))
 
     nexradDBSettings = self.configFile.getDatabaseSettingsEx('//environment/stationTesting/database/nexradDatabase/')
     nexradDB = dhecDB(nexradDBSettings['dbName'],"dhec_testing_logger")
@@ -915,7 +1356,7 @@ class testSuite(object):
     for watershed in self.configFile.getNextInList(regionList):
       watershedName = watershed.get('id')
       testObjName = self.configFile.getEntry('testObject', watershed)
-      self.logMsg(logging.INFO, "Region: %s processing object: %s" %(watershedName, testObjName))
+      self.logger.info("Region: %s processing object: %s" %(watershedName, testObjName))
       #Determine if the test object provided in the config file exists in the dictionary of available processing
       #objects.
       if(testObjName in globals()):
@@ -935,42 +1376,24 @@ class testSuite(object):
     outputData = self.configFile.getEntry(tag)
     if(outputData == None):
       outputData = 0
-    
-    #If we are going to put the data out in the email and KML file, build our mapping.
-    if(outputData):  
-      tag = "//environment/stationTesting/results/inputVariableNames"
-      variableList = self.configFile.getListHead(tag)
-      if(variableList != None):
-        for variable in self.configFile.getNextInList(variableList):
-          entry = {}
-          variableName = variable.get('id')
-          displayName = self.configFile.getEntry('displayName', variable)
-          if(displayName != None):
-            entry['displayName'] = displayName
-          else:
-             entry['displayName'] = variableName
-          desc = self.configFile.getEntry('description', variable)
-          if(desc != None):
-            entry['description'] = desc
-          else:
-            entry['description'] = variableName            
-          self.varMapping[variableName] = entry
-
-    
+       
     testBeginDate = beginDate.astimezone(timezone('US/Eastern'))
     testEndDate = endDate.astimezone(timezone('US/Eastern'))
-    self.createMapOutput(outputData, nexradDB, testBeginDate, testEndDate, testRunDate)
-    self.sendResultsEmail(outputData, testBeginDate, testEndDate, testRunDate)
+    #self.createMapOutput(outputData, nexradDB, testBeginDate, testEndDate, testRunDate)
+    #self.sendResultsEmail(outputData, testBeginDate, testEndDate, testRunDate)
     obsDB.dbConnection.DB.close()
     nexradDB.DB.close()
+    self.sendResults(testBeginDate, testEndDate, testRunDate)
 
   def storeResults(self, dbObj, wqObj, endDate, testRunDate):    
-    for station in wqObj.results:
+    for station in wqObj.results:      
+      if(self.logger != None):
+        self.logger.info("Storing %s results to database." %(station))
       platformHandle = 'dhec.%s.monitorstation' % (station)
       platformCursor = dbObj.getPlatformInfo(platformHandle)
       if(platformCursor != None):
         nfo = platformCursor.fetchone()
-        if(nfo != None):        
+        if(nfo != None):                  
           #Check to see if the result type exists as a sensor on the platform, if not add it.
           sensorId = dbObj.addSensor('overall_result', 'units', platformHandle, 1, 0, 1, None, True)        
           if(sensorId != None and sensorId != -1):
@@ -993,286 +1416,53 @@ class testSuite(object):
             if(self.logger != None):
                 self.logger.error("Unable to find or add sensor id for platform: %s obs: overall_result(units). %s"\
                                    % (platformHandle, dbObj.getErrorInfo()))
-          #Check to see if the result type exists as a sensor on the platform, if not add it.
-          sensorId = dbObj.addSensor('mlr_result', 'units', platformHandle, 1, 0, 1, None, True)        
-          if(sensorId != None and sensorId != -1):
-            del mVals[:]
-            mVals.append(wqObj.results[station].mlrPrediction)            
-            if(dbObj.addMeasurement('mlr_result', 'units',
-                                               platformHandle,
-                                               endDate,
-                                               nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                               0,
-                                               mVals,
-                                               1,
-                                               False,
-                                               testRunDate) != True):
-              if(self.logger != None):
-                self.logger.error("Unable to add mlr_result to database. %s" % (dbObj.getErrorInfo()))
+          #Now loop through the tests and add the results to the database.
+          for testObj in wqObj.results[station].tests:
+            obsName = None
+            if(testObj.name == 'dhecMLR'):
+              obsName = 'mlr_result'
+            elif(testObj.name == 'dhecCART'):
+              obsName = 'cart_result'
+                
+            #Check to see if the result type exists as a sensor on the platform, if not add it.
+            sensorId = dbObj.addSensor(obsName, 'units', platformHandle, 1, 0, 1, None, True)        
+            if(sensorId != None and sensorId != -1):
+              del mVals[:]
+              mVals.append(testObj.predictionLevel)            
+              if(dbObj.addMeasurement(obsName, 'units',
+                                                 platformHandle,
+                                                 endDate,
+                                                 nfo['fixed_latitude'], nfo['fixed_longitude'],
+                                                 0,
+                                                 mVals,
+                                                 1,
+                                                 False,
+                                                 testRunDate) != True):
+                if(self.logger != None):
+                  self.logger.error("Unable to add %s to database. %s" % (obsName, dbObj.getErrorInfo()))
+              else:
+                self.logger.debug("Added %s: %d to database." % (obsName, testObj.predictionLevel))
             else:
-              self.logger.debug("Added mlr_result: %d to database." % (wqObj.results[station].mlrPrediction))
-          else:
-            if(self.logger != None):
-                self.logger.error("Unable to find or add sensor id for platform: %s obs: mlr_result(units). %s"\
-                                   % (platformHandle, dbObj.getErrorInfo()))
-          #Check to see if the result type exists as a sensor on the platform, if not add it.
-          sensorId = dbObj.addSensor('cart_result', 'units', platformHandle, 1, 0, 1, None, True)        
-          if(sensorId != None and sensorId != -1):
-            del mVals[:]
-            mVals.append(wqObj.results[station].cartPrediction)            
-            if(dbObj.addMeasurement('cart_result', 'units',
-                                               platformHandle,
-                                               endDate,
-                                               nfo['fixed_latitude'], nfo['fixed_longitude'],
-                                               0,
-                                               mVals,
-                                               1,
-                                               False,
-                                               testRunDate) != True):
               if(self.logger != None):
-                self.logger.error("Unable to add cart_result to database. %s" % (dbObj.getErrorInfo()))
-            else:
-              self.logger.debug("Added cart_result: %d to database." % (wqObj.results[station].cartPrediction))
-          else:
-            if(self.logger != None):
-                self.logger.error("Unable to find or add sensor id for platform: %s obs: cart_result(units). %s" %\
-                                   (platformHandle, dbObj.getErrorInfo()))
+                  self.logger.error("Unable to find or add sensor id for platform: %s obs: %s(units). %s"\
+                                     % (platformHandle, obsName, dbObj.getErrorInfo()))
                 
     dbObj.commit()
     return
 
-  def sendResults(self):
-    self.createMapOutput()
-    self.sendResultsEmail()
+  def sendResults(self, testBeginDate, testEndDate, testRunDate):
+    tag = "//environment/stationTesting/results/outputResultList"
+    resultList = self.configFile.getListHead(tag)
+    for result in self.configFile.getNextInList(resultList):
+      objName = self.configFile.getEntry('object', result)
+      if(objName in globals()):
+        resultObj = globals()[objName]
+        #Now we instantiate the object.
+        outObj = resultObj(self.configFile, self.logger)
+        #Create the output.
+        outObj.createOutput(self.testObjects, testBeginDate, testEndDate, testRunDate)      
     return    
 
-  """
-  Function: writeKMLFile
-  Purpose: Creates a KML file with the latest hour, 24, and 48 hour summaries.
-  """
-  def createMapOutput(self, outputData, nexradDB, beginDate, endDate, testRunDate):
-    from pykml import kml
-    tag = "//environment/stationTesting/results/kmlFilePath"
-    kmlFilepath = self.configFile.getEntry(tag)
-
-    if(kmlFilepath != None):
-      
-      pmTableBegin = """<table>"""
-      pmTableEnd = """</table>"""
-      pmTemplate = """<tr><td>%(region)s</td></tr>
-        <tr><td>Station:</td><td>%(station)s</td><td>%(description)s</td></tr>
-        <tr><td>Prediction for Date:</td><td>%(endDate)s</td></tr>        
-        <tr><td>Date Tests Run:</td><td>%(testRunDate)s</td></tr>        
-        <tr><td>Overall Prediction:</td><td>%(ensemblePrediction)s</td></tr>
-        <tr><td>MLR:</td><td>%(mlrPrediction)s</td><td>log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</td></tr>
-        <tr><td>Cart:</td><td>%(cartPrediction)s</td></tr>"""
-        
-      try:        
-        self.logMsg(logging.INFO, "Creating DHEC ETCOC Prediction KML file: %s" % (kmlFilepath))
-        etcocKML = kml.KML()
-        doc = etcocKML.createDocument("DHEC ETCOC Predictions")
-        doc.appendChild(etcocKML.createStyle(
-            id="no_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/no_light16x16.png"))
-        ))
-        doc.appendChild(etcocKML.createStyle(
-            id="low_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/green_light16x16.png"))
-            
-        ))
-        doc.appendChild(etcocKML.createStyle(
-            id="med_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/yellow_light16x16.png"))            
-        ))
-        doc.appendChild(etcocKML.createStyle(
-            id="hi_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/red_light16x16.png"))                        
-        ))
-        for wqObj in self.testObjects:      
-          
-          #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
-          #alpha numeric order.          
-          stationKeys = wqObj.results.keys()
-          stationKeys.sort()
-          
-          for station in stationKeys:
-            desc = ""
-            #Get the geo location information for the station
-            platformHandle = "dhec.%s.monitorstation" % (station)
-            dbCursor = nexradDB.getPlatformInfo(platformHandle)
-            latitude = 0.0
-            longitude = 0.0
-            stationDesc = ""
-            if(dbCursor != None):
-              row = dbCursor.fetchone()
-              if(row != None):
-                latitude = row['fixed_latitude'] 
-                longitude = row['fixed_longitude'] 
-                stationDesc = row['description']
-            else:
-              self.logMsg(logging.ERROR, "ERROR: Unable to get platform: %s data. %s" % (platformHandle, nexradDB.getErrorInfo()))
-            desc += pmTableBegin
-            tstObj = wqObj.results[station]
-            tmpltDict = { 'region' : wqObj.regionName,
-              'station' : station,
-              'ensemblePrediction' : predictionLevels(tstObj.ensemblePrediction).__str__(),
-              'mlrPrediction' : predictionLevels(tstObj.mlrPrediction).__str__(),
-              'log10MLRResult' : tstObj.log10MLRResult,
-              'mlrResult' : tstObj.mlrResult,
-              'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__(),
-              'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%M'),
-              'endDate' : endDate.strftime('%Y-%m-%d %H:%M'),
-              'description' : stationDesc}
-            
-            desc += pmTemplate % (tmpltDict)
-            tmpltDict.clear()
-            desc += pmTableEnd        
-            predictionStyle = "#no_prediction"
-            if(tstObj.ensemblePrediction == predictionLevels.LOW):
-              predictionStyle = "#low_prediction"
-            elif(tstObj.ensemblePrediction == predictionLevels.MEDIUM):
-              predictionStyle = "#med_prediction"
-            elif(tstObj.ensemblePrediction == predictionLevels.HIGH):
-              predictionStyle = "#hi_prediction"              
-            pm = etcocKML.createPlacemark(station, latitude, longitude, desc, predictionStyle)
-            #Build a custom xml section to hold the data
-            dataKML = etcocKML.xml.createElement("ExtendedData")
-            dataKmlTag = etcocKML.xml.createElement('Data')
-            dataKmlTag.setAttribute("name", "station")
-            dataValueTag = etcocKML.xml.createElement('value')
-            dataValueTag.appendChild(etcocKML.xml.createTextNode(station))
-            dataKmlTag.appendChild(dataValueTag)
-            dataKML.appendChild(dataKmlTag)
-            
-            if(outputData):
-              #Get the region specific variables, we want to skip over the station name and coefficient.
-              dataKmlTag = etcocKML.xml.createElement('Data')
-              dataKmlTag.setAttribute("name", "data")
-              dataValueTag = etcocKML.xml.createElement('value')
-              dataUsed = "<table>"
-              for key in tstObj.data:
-                if(key != "station"):
-                  varInfo = self.varMapping[key]
-                  val = tstObj.data[key]
-                  if(val == -9999):
-                    val = "Data unavailable."                  
-                  if(type(val) != str):
-                    dataUsed += "<tr><td>%s</td><td>%f</td></tr>" % (varInfo['displayName'], val)
-                  else:
-                    dataUsed += "<tr><td>%s</td><td>%s</td></tr>" % (varInfo['displayName'], val)
-              dataUsed += "</table>"
-              dataUsed = dataUsed.lstrip()
-              dataUsed = dataUsed.rstrip()
-              dataValueTag.appendChild(etcocKML.xml.createTextNode(dataUsed))
-              dataKmlTag.appendChild(dataValueTag)
-              dataKML.appendChild(dataKmlTag)
-            pm.appendChild(dataKML)
-            
-            doc.appendChild(pm)
-        etcocKML.root.appendChild(doc)  
-        kmlFile = open(kmlFilepath, "w")
-        kmlFile.writelines(etcocKML.writepretty())
-        kmlFile.close()
-      except Exception, e:
-        if(self.logger != None):
-          self.logger.exception(e)      
-          sys.exit(-1)
-    else:
-      self.logMsg(logging.DEBUG, "Cannot write KML file, no filepath provided in config file.")
-    
-    return
-  def sendResultsEmail(self, outputData, beginDate, endDate, testRunDate):
-    from xeniatools.utils import smtpClass 
-    import string
-    tag = "//environment/stationTesting/results/outputDataUsed"
-    outputData = self.configFile.getEntry(tag)
-    if(outputData == None):
-      outputData = 0
-    subjectTmpl = "[DHEC] Water Quality Prediction Results - %(endDate)s"
-    header =  """Predictions for Date: %(endDate)s
-Test Execution Date: %(testRunDate)s
-"""
-
-    regionHdr = """--------%s--------
-    
-"""    
-    msgTemplate = """Station: %(station)s
-      Overall Prediction: %(ensemblePrediction)s
-"""
-              #MLR: %(mlrPrediction)s log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f
-              #Cart: %(cartPrediction)s"""
-    if(outputData):
-    #  msgTemplate += """
-    #          Coefficient: %(station_coefficient)f
-    #          
-#"""
-      dataTemplate = """
-Data used for station tests: 
-%(data)s
-    
-
-"""
-    else:
-      msgTemplate += """
-"""      
-      
-    try:   
-      emailSettings = self.configFile.getEmailSettingsEx('//environment/stationTesting/results/')
-      #Loop through the results objects to get the individual station test results.
-      body = header % ({'endDate' : endDate.strftime('%Y-%m-%d'), 'testRunDate' : testRunDate.strftime('%Y-%m-%d %H:%m')})
-      for wqObj in self.testObjects:
-        body += regionHdr % (wqObj.regionName)
-        #The stationKeys are the names of the stations, let's sort them so they'll be in an increasing
-        #alpha numeric order.          
-        stationKeys = wqObj.results.keys()
-        stationKeys.sort()
-        dataUsed = ""
-        for station in stationKeys:
-          tstObj = wqObj.results[station]
-
-          #If we want to output the data, and we have not already populate the station non-specific variables.
-          if(outputData and len(dataUsed) == 0):
-            #Get the region specific variables, we want to skip over the station name and coefficient.
-            for key in tstObj.data:
-              if(key != "station" and key != "station_coefficient"):
-                val = tstObj.data[key]
-                varInfo = self.varMapping[key]                
-                if(val == -9999):
-                  val = "Data unavailable."
-                if(type(val) != str):
-                  dataUsed += "%s: %f\n" % (varInfo['displayName'], val)
-                else:
-                  dataUsed += "%s: %s\n" % (varInfo['displayName'], val)
-          
-          #Build the string substitution dictionary for the message template.
-          if('station_coefficient' in tstObj.data):
-            stationCo = tstObj.data['station_coefficient']
-          else:
-            stationCo = 0.0
-          tmpltDict = {'station' : station,
-            'ensemblePrediction' : predictionLevels(tstObj.ensemblePrediction).__str__(),
-            'mlrPrediction' : predictionLevels(tstObj.mlrPrediction).__str__(),
-            'log10MLRResult' : tstObj.log10MLRResult,
-            'mlrResult' : tstObj.mlrResult,
-            'cartPrediction' : predictionLevels(tstObj.cartPrediction).__str__(),
-            'station_coefficient' : stationCo}
-          body += (msgTemplate % (tmpltDict))
-          tmpltDict.clear()
-        if(outputData):
-          body += (dataTemplate % {'data' : dataUsed})                      
-      subject =  subjectTmpl % ({'endDate' : endDate.strftime('%Y-%m-%d')})
-      smtp = smtpClass(emailSettings['server'], emailSettings['from'], emailSettings['pwd'])
-      smtp.from_addr("%s@%s" % (emailSettings['from'],emailSettings['server']))
-      smtp.rcpt_to(emailSettings['toList'])
-      smtp.subject(subject)
-      smtp.message(body)
-      smtp.send()      
-      if(self.logger != None):
-        self.logger.info("Sending email alerts.")
-    except Exception,e:
-      if(self.logger != None):
-        self.logger.exception(e)                             
-    return
   
 if __name__ == '__main__':
   try:
