@@ -8,7 +8,7 @@ Changes: Use the dhecXMRGProcessing object to vacuum the database instead of the
 import sys
 import optparse
 import time
-sys.path.append("C:\Documents and Settings\dramage\workspace\BeachAdvisory") 
+#sys.path.append("C:\Documents and Settings\dramage\workspace\BeachAdvisory") 
 from dhecRainGaugeProcessing import dhecDB
 from dhecRainGaugeProcessing import rainGaugeData
 from dhecRainGaugeProcessing import processDHECRainGauges 
