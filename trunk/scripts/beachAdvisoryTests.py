@@ -312,7 +312,10 @@ class outputKMLResults(outputResults):
             for test in tstObj.tests:
               results = test.getResults()
               for resultType in results:
-                tmpltDict[resultType] = results[resultType]
+                result = results[resultType]
+                if(result == None):
+                  result = -9999               
+                tmpltDict[resultType] = result
                 
             desc += pmTemplate % (tmpltDict)
             tmpltDict.clear()
@@ -363,6 +366,8 @@ class outputKMLResults(outputResults):
         kmlFile = open(kmlFilepath, "w")
         kmlFile.writelines(etcocKML.writepretty())
         kmlFile.close()
+        nexradDB.DB.close()
+
         return(True)
       except Exception, e:
         if(self.logger != None):
@@ -448,7 +453,10 @@ Data used for station tests:
           for test in tstObj.tests:
             results = test.getResults()
             for resultType in results:
-              tmpltDict[resultType] = results[resultType]
+              result = results[resultType]
+              if(result == None):
+                result = -9999
+              tmpltDict[resultType] = result
           
           body += (msgTemplate % (tmpltDict))
           tmpltDict.clear()
@@ -1379,8 +1387,6 @@ class testSuite(object):
        
     testBeginDate = beginDate.astimezone(timezone('US/Eastern'))
     testEndDate = endDate.astimezone(timezone('US/Eastern'))
-    #self.createMapOutput(outputData, nexradDB, testBeginDate, testEndDate, testRunDate)
-    #self.sendResultsEmail(outputData, testBeginDate, testEndDate, testRunDate)
     obsDB.dbConnection.DB.close()
     nexradDB.DB.close()
     self.sendResults(testBeginDate, testEndDate, testRunDate)
