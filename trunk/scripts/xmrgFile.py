@@ -38,7 +38,7 @@ class xmrgFile:
     Return: None
   """
   def __init__(self, loggerName=None):
-    self.loggerName = loggerName
+    self.logger = None
     if( loggerName != None ):
       self.logger = logging.getLogger(loggerName)
       self.logger.debug("creating an instance of xmrgFile")
@@ -97,7 +97,7 @@ class xmrgFile:
     except Exception, E:
       import traceback      
       self.lastErrorMsg = traceback.format_exc()
-      if( loggerName != None ):
+      if(self.logger != None ):
         self.logger.error(self.lastErrorMsg)
       else:
         print(self.lastErrorMsg) 
@@ -466,6 +466,13 @@ class xmrgFile:
     return(filetime)
   
 class xmrgDB(object):
+  """
+  Function: __init__
+  Purpose: Initializes the object
+  Parameters: None
+  Returns: None
+  
+  """  
   def __init__(self):
     self.db = None
     self.lastErrorMsg = ''
@@ -555,6 +562,15 @@ class xmrgDB(object):
                                         exceptionTraceback)))     
     return(False)  
 
+  """
+  Function: buildPolygonString
+  Purpose: Takes a list of latitudes/longitudes representing a polygon and builds a GIS POLYGON string.
+  Parameters:
+    polygonPtList is a list of x,y tuples which forms the polygon we use to determine the intersection with the 
+      radar polygons.
+  Return:
+    A GIS POLYGON string that can be used for a SQL spatial query.
+  """
   def buildPolygonString(self, polygonPtList):
     if(len(polygonPtList)):
       points = ''
@@ -766,7 +782,7 @@ if __name__ == '__main__':
         radarCursor = db.getRadarDataForBoundary(polygonPtList, filetime, filetime)
         if(radarCursor != None):
           for row in radarCursor:
-            print( "Longitude: %s Latitude: %s PrecipValue: %s" % (row['latitude'],row['longitude'],row['precipitation']))
+            print( "Longitude: %s Latitude: %s PrecipValue: %s" % (row['longitude'],row['latitude'],row['precipitation']))
         weightedAvg = db.calculateWeightedAvg(polygonPtList, filetime, filetime)
         print("Weighted Average: %f" %(weightedAvg))
   except Exception, E:
