@@ -644,6 +644,27 @@ class xmrgDB(object):
     else:
       weighted_avg = None
     return(weighted_avg)
+  """
+  Function: vacuumDB
+  Purpose: Cleanup the database. 
+  Parameters: None
+  Return: True if successful, otherwise False.
+  """    
+  def vacuumDB(self):
+    try:
+      sql = "VACUUM;"
+      dbCursor = self.db.cursor()
+      dbCursor.execute(sql)    
+      return(True)    
+    except sqlite3.Error, e:        
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
+      sys.exit(-1)      
+    except Exception, E:
+      msg = self.procTraceback()
+      self.logger.critical(msg)      
+      sys.exit(-1)      
+    return(False)
     
 if __name__ == '__main__':   
   try:
