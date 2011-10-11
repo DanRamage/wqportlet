@@ -1,3 +1,11 @@
+"""
+Revisions
+Date: 2011-10-11
+Author: DWR
+Function: wqEquations.overallPrediction
+Changes: If a test has a NO_TEST result, we do not use it in the ensemble prediction, we skip it.
+Previously if any test was NO_TEST, we considered the ensemble a NO_TEST.
+"""
 import sys
 import optparse
 import logging
@@ -546,21 +554,21 @@ class wqEquations(object):
   """      
   def overallPrediction(self):
     allTestsComplete = True
-    testCnt = float(len(self.tests))
-    if(testCnt):
+    executedTstCnt = 0
+    if(len(self.tests)):
       sum = 0
       for testObj in self.tests:
-        #Each test must have been executed, if not we cannot compute the overall prediction level.
+        #DWR 2011-10-11
+        #If a test wasn't executed, we skip using it.
         if(testObj.predictionLevel != predictionLevels.NO_TEST):
           sum += testObj.predictionLevel
-        else:
-          allTestsComplete = False
-          break
-      if(allTestsComplete):
-        self.ensemblePrediction = int(round(sum / testCnt))
+          executedTstCnt += 1
+      if(executedTstCnt):
+        self.ensemblePrediction = int(round(sum / float(executedTstCnt)))
+        
            
     if(self.logger != None):
-      self.logger.debug("Overal Prediction: %d" %(self.ensemblePrediction))
+      self.logger.debug("Overal Prediction: %d(%s)" %(self.ensemblePrediction, predictionLevels(self.ensemblePrediction).__str__()))
     return(self.ensemblePrediction)
   
 
