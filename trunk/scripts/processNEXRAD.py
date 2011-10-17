@@ -3,15 +3,17 @@ import optparse
 import time
 import os
 import os.path
-#sys.path.append("C:\Documents and Settings\dramage\workspace\BeachAdvisory") 
 import logging
 import logging.config
 from pysqlite2 import dbapi2 as sqlite3      
+import datetime
+from datetime import tzinfo
+from pytz import timezone
 
 from xmrgFile import xmrgFile,xmrgDB,hrapCoord,LatLong
 
 class nexradProcess(object):
-  def __init__(self, bbox, polygons, dbObj, logger, outputFilename):
+  def __init__(self, bbox, polygons, dbObj, logger, outputFilename, outputInches=True):
     self.bbox = None
     if(bbox != None):
       self.bbox = bbox
@@ -32,6 +34,7 @@ class nexradProcess(object):
     self.logger = logger
     self.outputFilename = outputFilename
     self.shapefilePath = None
+    self.dataInInches = outputInches
     
   
   def writeShapefiles(self, shapefilePath):
@@ -40,12 +43,28 @@ class nexradProcess(object):
   def importFilesIntoDB(self, xmrgDir, deleteDataFiles):     
     try:
       outputFile = None
-      if(self.outputFilename):           
-        outputFile = open(self.outputFilename, "w")
-        outputFile.write("Start Time, End Time, Weighted Average\n")
       #Get a list of the files in the import dir.
       fileList = os.listdir(xmrgDir)
       fileList.sort()          
+      if(self.outputFilename):     
+        #Add starting date-ending date to file name.
+        xmrg = xmrgFile()
+        
+        #Convert into Eastern time.
+        eastern = timezone('UTC')  
+        estDate = eastern.localize(datetime.datetime.strptime(xmrg.getCollectionDateFromFilename(fileList[0]), "%Y-%m-%dT%H:%M:%S"))
+        startDate = estDate.astimezone(timezone('US/Eastern')).strftime("%Y-%m-%dT%H:%M:%S")
+        estDate = eastern.localize(datetime.datetime.strptime(xmrg.getCollectionDateFromFilename(fileList[-1]), "%Y-%m-%dT%H:%M:%S"))
+        endDate = estDate.astimezone(timezone('US/Eastern')).strftime("%Y-%m-%dT%H:%M:%S")
+               
+        startDate = startDate.replace(':', '_')
+        endDate = endDate.replace(':', '_')
+        nameSubs = {"start" : startDate, "end" : endDate }
+        filename = self.outputFilename % (nameSubs)
+        outputFile = open(filename, "w")
+        if(self.logger != None):
+          self.logger.debug("Output file: %s opened" % (filename))
+        outputFile.write("Start Time, End Time, Weighted Average\n")
       for fileName in fileList:    
         fullPath = "%s/%s" %(xmrgDir,fileName)  
         #Make sure we are trying to import a file and not a directory.
@@ -70,7 +89,7 @@ class nexradProcess(object):
           if(deleteDataFiles):
             xmrg.cleanUp(True,True)
           else:
-            deleteDataFiles(True,False)
+            xmrg.cleanUp(True,False)
           xmrg.xmrgFile.close()
                   
         else:
@@ -81,6 +100,12 @@ class nexradProcess(object):
         self.logger.exception(E)
         
   def doCalcs(self, outputFile, startTime, endTime):
+    #Convert the times to EST, internally we are UTC
+    utcTZ = timezone('UTC')  
+    utcDate = utcTZ.localize(datetime.datetime.strptime(startTime, "%Y-%m-%dT%H:%M:%S"))
+    estStartTime = (utcDate.astimezone(timezone('US/Eastern'))).strftime("%Y-%m-%dT%H:%M:%S")
+    utcDate = utcTZ.localize(datetime.datetime.strptime(endTime, "%Y-%m-%dT%H:%M:%S"))
+    estEndTime = (utcDate.astimezone(timezone('US/Eastern'))).strftime("%Y-%m-%dT%H:%M:%S")
     for polygonKey in self.polygonDict:
       polygonPtList = self.polygonDict[polygonKey].split(',')
       radarCursor = self.dbObj.getRadarDataForBoundary(polygonPtList, startTime, endTime)
@@ -91,7 +116,14 @@ class nexradProcess(object):
             data += ","
           data += "Longitude: %s Latitude: %s PrecipValue: %s" % (row['longitude'],row['latitude'],row['precipitation'])
       weightedAvg = self.dbObj.calculateWeightedAvg(polygonPtList, startTime, endTime)
-      outputFile.write("%s,%s,%f\n" %(startTime,endTime,weightedAvg))
+      if(self.dataInInches):
+        #In the binary file, the data is stored as hundreths of mm, if we want to write the data as 
+        #inches , need to divide by 2540.
+        weightedAvg /= (25.4 * 100.0)
+      #Convert to mm
+      else:
+        weightedAvg /= 100.0
+      outputFile.write("%s,%s,%f\n" %(estStartTime,estEndTime,weightedAvg))
       outputFile.flush()
       if(self.logger != None):
         self.logger.debug("Polygon: %s Weighted Avg: %f StartTime: %s EndTime: %s, %s" % (polygonKey,weightedAvg,startTime,endTime,data))
@@ -104,15 +136,12 @@ class nexradProcess(object):
     self.logger.debug( "File Origin: X %d Y: %d Columns: %d Rows: %d" %(xmrg.XOR,xmrg.YOR,xmrg.MAXX,xmrg.MAXY))
     try:      
       #This is the database insert datetime.           
-      datetime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime() )
+      #datetime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime() )
+      nowTime = (datetime.datetime.now()).strftime("%Y-%m-%dT%H:%M:%S")
       #Parse the filename to get the data time.
-      (directory,filetime) = os.path.split( xmrg.fileName )
+      (directory,filetime) = os.path.split(xmrg.fileName)
       (filetime,ext) = os.path.splitext( filetime )
       filetime = xmrg.getCollectionDateFromFilename(filetime)
-      #In the binary file, the data is stored as hundreths of mm, if we want to write the data as 
-      #inches , need to divide by 2540.
-      dataConvert = 100.0 
-      dataConvert = 25.4 * dataConvert 
   
       #Flag to specifiy if any non 0 values were found. No need processing the weighted averages 
       #below if nothing found.
@@ -138,8 +167,6 @@ class nexradProcess(object):
           #  else:
           #    continue
           #else:
-          if(val > 0):
-            val /= dataConvert
             
           hrap = hrapCoord( xmrg.XOR + col, xmrg.YOR + row )
           latlon = xmrg.hrapCoordToLatLong( hrap )                                
@@ -174,7 +201,7 @@ class nexradProcess(object):
             sql = "INSERT INTO precipitation_radar \
                   (insert_date,collection_date,latitude,longitude,precipitation,geom) \
                   VALUES('%s','%s',%f,%f,%f,GeomFromText('%s',4326));" \
-                  %( datetime,filetime,latlon.latitude,latlon.longitude,val,wkt)
+                  %( nowTime,filetime,latlon.latitude,latlon.longitude,val,wkt)
             cursor = self.dbObj.executeQuery( sql )
             #Problem with the query, since we are working with transactions, we have to rollback.
             if( cursor == None ):
@@ -246,11 +273,6 @@ class nexradProcess(object):
       layerDefinition = layer.GetLayerDefn()
       filetime = xmrg.getCollectionDateFromFilename(filetime)
 
-      #In the binary file, the data is stored as hundreths of mm, if we want to write the data as 
-      #inches , need to divide by 2540.
-      dataConvert = 100.0 
-      dataConvert = 25.4 * dataConvert 
-
       #If we are using a bounding box, let's get the row/col in hrap coords.
       llHrap = None
       urHrap = None
@@ -268,7 +290,13 @@ class nexradProcess(object):
           val = xmrg.grid[row][col]
           #If there is no precipitation value, or the value is erroneous 
           if( val > 0 ):
-            val /= dataConvert
+            #In the binary file, the data is stored as hundreths of mm, if we want to write the data as 
+            #inches , need to divide by 2540.
+            if(self.dataInInches):
+              val /= (25.4 * 100.0)
+            #convert to mm
+            else:
+              val /= 100.0
             
           hrap = hrapCoord( xmrg.XOR + col, xmrg.YOR + row )
           latlon = xmrg.hrapCoordToLatLong( hrap )                                
@@ -344,7 +372,7 @@ if __name__ == '__main__':
   parser.add_option("-n", "--NexradDir", dest="nexradDir",
                     help="Directory to the nexrad xmrg files to import and process." )
   parser.add_option("-o", "--OutputFile", dest="outputFile",
-                      help="The file to write the output csv file to.")  
+                      help="The file to write the output csv file to. Can use substitutions %(start) %(end).")  
   parser.add_option("-f", "--ShapeFileDir", dest="shapefileDir",
                       help="The directory to write a shapefile for the processed XMRG file to.")  
   parser.add_option("-b", "--BBOX", dest="bbox",
@@ -358,6 +386,9 @@ if __name__ == '__main__':
                     help="If set, cleans out the database after processing." )
   parser.add_option("-x", "--RemoveDataFiles", dest="delFiles", action="store_true",
                     help="If set, deletes the NEXRAD data files after processing." )
+  parser.add_option("-i", "--OutputInches", dest="outInches", action="store_true",
+                    help="If set, the output is converted into inches, native is millimeters." )
+  
 
   (options, args) = parser.parse_args()
   
@@ -375,14 +406,14 @@ if __name__ == '__main__':
     if(logger != None):
       logger.debug("Command line options: %s" % (options)) 
         
-    db = xmrgDB()
+    db = xmrgDB(logger)
     if(db.connect(options.databaseFile, options.spatialiteLib) != True):
       logger.debug("Unable to connect to database: %s, cannot continue" %(options.databaseFile))   
   
     #Create our polygon dictionary
     polygons = dict(arg.split('=') for arg in (options.polygons.split(';')))
     
-    nexradProc = nexradProcess(options.bbox, polygons, db, logger, options.outputFile)
+    nexradProc = nexradProcess(options.bbox, polygons, db, logger, options.outputFile, options.outInches)
     if(options.shapefileDir):
       nexradProc.writeShapefiles(options.shapefileDir)
     if(options.nexradDir):
