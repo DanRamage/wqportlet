@@ -1,3 +1,5 @@
+import shutil
+import os
 import sys
 import traceback
 import time
@@ -13,16 +15,9 @@ from xeniatools import getRemoteFiles
 
 
 class downloadNEXRAD(object):
-  def __init__(self, nexradURL, downloadDir, logger):
-    self.url = nexradURL
+  def __init__(self, downloadDir, logger):
     self.logger = logger
-    self.remoteFileDL = getRemoteFiles.remoteFileDownload( nexradURL, 
-                                                           downloadDir,
-                                                           'b',
-                                                            False,
-                                                            None,
-                                                            True,
-                                                            self.logger)
+    self.destDirectory = downloadDir
     
     
   """
@@ -41,19 +36,6 @@ class downloadNEXRAD(object):
     fileName = 'xmrg%s%sz.gz' % ( date,hour )
     return(fileName)
   
-  
-  """
-  Function: getXMRGFile
-  Purpose: Attempts to download the file name given in fileName.
-  Parameters: 
-    fileName is the name of the xmrg file we are trying to download.
-  Returns:
-  
-  """
-  def getXMRGFile(self, fileName):
-    return(self.remoteFileDL.getFile( fileName, None, False))
-
-
   """
   Function: buildFilelist
   Purpose: Given the starting and ending date/times, this builds a list of nexrad files to download. NEXRAD
@@ -84,13 +66,50 @@ class downloadNEXRAD(object):
     Returns:
       A list object with the filenames.
   """
-  def downloadFiles(self, startDate, endDate):
+  def downloadFiles(self, startDate, endDate, remoteFileDL):
     if(self.logger != None):
       self.logger.debug("Download files between %s and %s" %(startDate.strftime("%Y-%m-%dT%H:%M:%S"), endDate.strftime("%Y-%m-%dT%H:%M:%S")))
     fileList = self.buildFilelist(startDate, endDate)
     for file in fileList:
-      self.getXMRGFile(file)
+      remoteFileDL.getFile(file, None, False)    
+      #self.getXMRGFile(file)
 
+  def copyFiles(self, startDate, endDate, directory):
+    try:
+      if(self.logger != None):
+        self.logger.debug("Copy files between %s and %s" %(startDate.strftime("%Y-%m-%dT%H:%M:%S"), endDate.strftime("%Y-%m-%dT%H:%M:%S")))
+      fileList = self.buildFilelist(startDate, endDate)
+      for file in fileList:
+        srcFilepath = "%s/%s" % (directory, file)
+        if(os.path.isfile(srcFilepath)):
+          destFilepath = "%s/%s" % (self.destDirectory,file)
+          shutil.copy(srcFilepath, destFilepath)
+          if(self.logger != None):
+            self.logger.debug("Copied file: %s to %s" % (srcFilepath, destFilepath))
+        else:
+          if(self.logger != None):
+            self.logger.debug("File %s does not exist." %(srcFilepath))      
+    except Exception, e:
+      if(self.logger != None):
+        self.logger.exception(e)
+    
+  def getFiles(self, startDate, endDate, url, directory):
+    if(url != None):
+      remoteFileDL = getRemoteFiles.remoteFileDownload( url, 
+                                                             self.destDirectory,
+                                                             'b',
+                                                              False,
+                                                              None,
+                                                              True,
+                                                              self.logger)
+      self.downloadFiles(startDate, endDate, remoteFileDL)
+    elif(directory != None):
+      self.copyFiles(startDate, endDate, directory)
+      
+    else:
+      if(self.logger != None):
+        self.logger.error("No URL or directory provided to get data from, cannot continue.")
+      
 
 if __name__ == '__main__':
   try:
@@ -111,11 +130,13 @@ if __name__ == '__main__':
                       help="Directory to download NEXRAD files to." )
     parser.add_option("-u", "--NEXRADUrl", dest="url",
                       help="URL to grab NEXRAD files from." )
+    parser.add_option("-i", "--NEXRADLocal", dest="localFiles",
+                      help="Directory to grab NEXRAD files from." )    
     parser.add_option("-l", "--LogConfigFile", dest="logConf",
                       help="Config file to use for the logging." )
   
     (options, args) = parser.parse_args()
-    if(options.endDate == None or options.beginDate == None or options.fileDir == None or options.url == None):
+    if(options.endDate == None or options.beginDate == None or options.fileDir == None):
       parser.print_usage()
       parser.print_help()
       sys.exit(-1)
@@ -133,9 +154,11 @@ if __name__ == '__main__':
     if(options.endDate):
       estDate = eastern.localize(datetime.datetime.strptime(options.endDate, "%Y-%m-%dT%H:%M:%S"))
       endDate = estDate.astimezone(timezone('UTC'))
-            
-    dlNexrad = downloadNEXRAD(options.url, options.fileDir, logger)
-    dlNexrad.downloadFiles(beginDate, endDate)
+    
+    #dlNexrad = downloadNEXRAD(options.url, options.fileDir, logger)
+    #dlNexrad.downloadFiles(beginDate, endDate)
+    dlNexrad = downloadNEXRAD(options.fileDir, logger)
+    dlNexrad.getFiles(beginDate, endDate, options.url, options.localFiles)
     
     if(logger != None):
       logger.info("Finished processing.")
