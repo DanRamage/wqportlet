@@ -1,3 +1,10 @@
+"""
+Revisions
+Author: DWR
+Date: 2012/06/21
+Changes: xmrgCleanup class added. Used to organize the XMRG files in a given directory into an archival
+  directory.
+"""
 import os
 import os.path
 import sys
@@ -6,6 +13,7 @@ import struct
 import csv
 import time
 import re
+import shutil
 import logging
 import logging.handlers
 #from collections import defaultdict  
@@ -14,7 +22,7 @@ import math
 import gzip
 from numpy import zeros
 from pysqlite2 import dbapi2 as sqlite3      
-
+import datetime
 
 
 class hrapCoord(object):
@@ -495,6 +503,7 @@ class xmrgDB(object):
         self.db.enable_load_extension(True)
         sql = 'SELECT load_extension("%s");' % (spatiaLiteLibFile)
         cursor = self.executeQuery(sql)
+        cursor.close()
         if(cursor != None):
           return(True)
         else:
@@ -528,13 +537,15 @@ class xmrgDB(object):
       self.lastErrorMsg = (repr(traceback.format_exception(exceptionType, 
                                       exceptionValue,
                                       exceptionTraceback)))     
+      del e
     except Exception, E:
       import traceback        
       exceptionType, exceptionValue, exceptionTraceback = sys.exc_info()
       
       self.lastErrorMsg = (repr(traceback.format_exception(exceptionType, 
                                       exceptionValue,
-                                      exceptionTraceback)))     
+                                      exceptionTraceback)))
+      del E     
     return(None)
 
   
@@ -552,6 +563,7 @@ class xmrgDB(object):
     if(dbCursor != None):
       try:
         self.db.commit()
+        dbCursor.close()
         return(True)  
       except sqlite3.Error, e:
         import traceback        
@@ -598,12 +610,13 @@ class xmrgDB(object):
   """
   def getRadarDataForBoundary(self, boundaryPolygon,strtTime,endTime):
     polyString = self.buildPolygonString(boundaryPolygon)
-    sql = "SELECT latitude,longitude,precipitation FROM precipitation_radar \
+    sql = "SELECT ogc_fid,latitude,longitude,precipitation,geom FROM precipitation_radar \
             WHERE\
             (collection_date >= '%s' AND collection_date <= '%s') AND\
             Intersects( Geom, \
                         GeomFromText('%s'))"\
             %(strtTime,endTime,polyString)
+    #print(sql)
     return(self.executeQuery(sql))
   
   """
@@ -621,13 +634,14 @@ class xmrgDB(object):
     polyString = self.buildPolygonString(boundaryPolygon)
     #Get the percentages that the intersecting radar grid make up of the watershed boundary.      
     sql = "SELECT * FROM(\
-           SELECT (Area(Intersection(radar.geom,GeomFromText('%s')))/Area(GeomFromText('%s'))) as percent,\
+           SELECT (ST_Area(ST_Intersection(radar.geom,GeomFromText('%s')))/ST_Area(GeomFromText('%s'))) as percent,\
                    radar.precipitation as precipitation\
            FROM precipitation_radar radar \
            WHERE radar.collection_date >= '%s' AND radar.collection_date <= '%s' AND\
                 Intersects(radar.geom, GeomFromText('%s')))"\
                 %(polyString, polyString, startTime, endTime, polyString)
-    dbCursor = self.executeQuery(sql)        
+    dbCursor = self.executeQuery(sql)
+    #print(sql)        
     if(dbCursor != None):
       total = 0.0
       date = ''
@@ -635,8 +649,10 @@ class xmrgDB(object):
       for row in dbCursor:
         percent = row['percent']
         precip = row['precipitation']
-        
-        total += (percent * precip)
+        if(percent != None and precip != None):
+          total += (percent * precip)
+        else:
+          print("Row: %d percent or precip is None" %(cnt))
         cnt += 1
       dbCursor.close()
       if(cnt > 0):
@@ -644,6 +660,38 @@ class xmrgDB(object):
     else:
       weighted_avg = None
     return(weighted_avg)
+  
+  def calculateWeightedAvg2(self, polygonKey, startTime, endTime):
+    weighted_avg = -9999
+    #Get the percentages that the intersecting radar grid make up of the watershed boundary.      
+    sql = "SELECT * FROM(\
+           SELECT (ST_Area(ST_Intersection(radar.geom,(SELECT the_geom FROM watershed_boundary WHERE name = '%s')))/ST_Area((SELECT the_geom FROM watershed_boundary WHERE name = '%s'))) as percent,\
+                   radar.precipitation as precipitation\
+           FROM precipitation_radar radar \
+           WHERE radar.collection_date >= '%s' AND radar.collection_date <= '%s' AND\
+                Intersects(radar.geom, (SELECT the_geom FROM watershed_boundary WHERE name = '%s')))"\
+                %(polygonKey, polygonKey, startTime, endTime, polygonKey)
+    dbCursor = self.executeQuery(sql)
+    #print(sql)        
+    if(dbCursor != None):
+      total = 0.0
+      date = ''
+      cnt = 0
+      for row in dbCursor:
+        percent = row['percent']
+        precip = row['precipitation']
+        if(percent != None and precip != None):
+          total += (percent * precip)
+        else:
+          print("Row: %d percent or precip is None" %(cnt))
+        cnt += 1
+      dbCursor.close()
+      if(cnt > 0):
+        weighted_avg = total
+    else:
+      weighted_avg = None
+    return(weighted_avg)
+
   """
   Function: vacuumDB
   Purpose: Cleanup the database. 
@@ -655,6 +703,7 @@ class xmrgDB(object):
       sql = "VACUUM;"
       dbCursor = self.db.cursor()
       dbCursor.execute(sql)    
+      dbCursor.close()
       return(True)    
     except sqlite3.Error, e:        
       msg = self.procTraceback()
@@ -665,7 +714,76 @@ class xmrgDB(object):
       self.logger.critical(msg)      
       sys.exit(-1)      
     return(False)
+
+"""
+Purpose: This class is a utlity class to perform a variety of tasks on a directory with XMRG files. For the most part
+it takes files for a certain year/month and moves them to a directory corresponding to that year/month to help keep 
+our main processing directory cleaner and make it easier to find files.
+"""
+class xmrgCleanup(object):
+  """
+  Function: __init__
+  Purpose: Initialize the object.
+  Parameters:
+    xmrgSrcDir - THe directory where the XMRG files currently are stored.
+    xmrgDestDir - The directory to move the XMRG files
+    logger - Flag, if true, logging is done, otherwise it is not.
+  """
+  def __init__(self, xmrgSrcDir, xmrgDestDir, logger=True):
+    self.srcDirectory = xmrgSrcDir
+    self.destDirectory = xmrgDestDir
+    if(logger):
+      self.logger = logging.getLogger(type(self).__name__)
+      
+  
+  """
+  Function: organizeFilesIntoDirectories
+  Purpose: Organizes the XMRG files by moving them from the self.srcDirectory into the self.destDirectory
+    having a further directory structure of \Year\Abbreviated Month.
+  Parameters:
+    filesOlderThan - datetime.datetime object that specifies the maximum date to keep in the self.srcDirectory. All
+      older files are moved.
+  """
+  def organizeFilesIntoDirectories(self, filesOlderThan=None):
+    fileList = os.listdir(self.srcDirectory)
     
+    for fileName in fileList:      
+      fullPath = "%s/%s" % (self.srcDirectory,fileName)       
+      #Verify we have a file, if not, pull it from the list.
+      if(os.path.isfile(fullPath) != True):
+        fileList.remove(fileName)
+        if(self.logger):
+          self.logger.debug("%s is not a file, removing." % (fileName))
+        continue       
+      
+      if(fileName.find('xmrg') == -1):
+        fileList.remove(fileName)
+        if(self.logger):
+          self.logger.debug("%s is not a valid XMRG file, removing." % (fileName))
+        continue
+    xFile = xmrgFile()
+    for fileName in fileList:
+      collectionDate = xFile.getCollectionDateFromFilename(fileName)
+      collectionDate = datetime.datetime.strptime(collectionDate, "%Y-%m-%dT%H:%M:%S")
+      moveFile = True
+      if(filesOlderThan):
+        if(collectionDate > filesOlderThan):
+          moveFile = False
+          
+      if(moveFile):
+        try:
+          #Directory structure is /year/abbreviated month: /2012/Aug
+          archiveDir = "%s/%s/%s" % (self.destDirectory,collectionDate.year, collectionDate.strftime("%b"))
+          #If the year directory doesn't exist, we create it.
+          if(os.path.exists(archiveDir) != True):
+            os.makedirs(archiveDir)
+          srcFullPath = "%s/%s" % (self.srcDirectory, fileName)
+          destFullPath = "%s/%s" % (archiveDir, fileName)
+          shutil.move(srcFullPath, destFullPath)
+        except Exception,e:
+          if(self.logger):
+            self.logger.exception(e)
+          
 if __name__ == '__main__':   
   try:
     parser = optparse.OptionParser()
