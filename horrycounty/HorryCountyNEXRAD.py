@@ -366,10 +366,16 @@ class dateControlFile:
 
       
   #def getReportingDates(self, dateToCheck):
-  def isReportingDay(self, dateToCheck):
+  def isReportingDay(self, dateToCheck, fixYear=True):
     #Get the reporting period we are currently in.
     startDate, endDate = self.getCurrentReportingPeriod(dateToCheck)
     if(startDate and endDate):
+      if(fixYear):
+        #Change the year to whatever the current year is if we are not at the first bi-week of the new year.
+        nowDate = datetime.datetime.utcnow()
+        if(startDate.month != 11 and endDate.month != 1):
+          startDate = startDate.replace(year=nowDate.year)
+        endDate = endDate.replace(year=nowDate.year)          
       #Check to see if the dateToCheck matches the reporting day.
       if(endDate.month == dateToCheck.month and endDate.day == dateToCheck.day):
         return(True,startDate,endDate)
@@ -444,6 +450,8 @@ if __name__ == '__main__':
       for watershed in watershedList:
         #Get the required ini settings.
         try:
+          if(logger):
+            logger.info("Processing watershed: %s." % (watershed))
           dbSettingsSection = watershed + '_databasesettings'
           #SQLite database file we save the data into and do our spatial processing on.
           nexradDbFile = configFile.get(dbSettingsSection, 'NexradDBFile')
@@ -499,6 +507,8 @@ if __name__ == '__main__':
           checkDate = dateControlFile(dateControlFilename, True)          
           #startDate,endDate = checkDate.getReportingDates(today)
           reportDay, startDate, endDate = checkDate.isReportingDay(today)  
+          if(logger):
+            logger.debug("Report Day: %d StartDate: %s EndDate: %s" %(reportDay, startDate, endDate))   
            
           nexradProc = horryCountyNexradProcess(bbox = importBBOX, 
                                      dbObj = db, 
@@ -536,9 +546,11 @@ if __name__ == '__main__':
           #Build the dictionary of polygons that represent the pieces inside the watershed.
           nexradProc.buildPolygonDictionary(watershedPolygonSrc)
           nexradProc.importFilesIntoDB(nexradDataDir, removeRawNexradFiles)
-          
           if(logger):
-            logger.info("Closing logfile.")
+            logger.info("Finished processing %s." % (watershed))
+          
+      if(logger):
+        logger.info("Closing logfile.")
         
       
   except Exception, E:
