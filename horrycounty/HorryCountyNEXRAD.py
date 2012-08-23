@@ -82,13 +82,13 @@ class horryCountyNexradProcess(nexradProcess):
           pmCnt = 0
           for pm in child.Placemark:
             polypoints = []
-            watershedName = pmCnt
+            watershedName = "%s_%d" % (self.currentRegionName, pmCnt)
             for simpleData in pm.ExtendedData.SchemaData.iterchildren():
               if(simpleData.attrib):
                 if 'name' in simpleData.attrib:
                   if(simpleData.attrib['name'] == "HUC_12"):
                     watershedName = simpleData.text
-                    break
+                    break                  
             polygon = pm.Polygon.outerBoundaryIs.LinearRing.coordinates
             points = polygon.text.split(' ')
             for point in points:
@@ -185,7 +185,7 @@ class horryCountyNexradProcess(nexradProcess):
             if(self.logger):
               self.logger.info("Processing watershed: %s, output file: %s." % (polygonName, watershedOutFilename))
             watershedFile = open(watershedOutFilename, "w")
-            watershedFile.write('Start,End,Weight Average Total,Number of Hours\n')
+            watershedFile.write('Area,Start,End,Weight Average Total,Number of Hours\n')
           except IOError,e:
             if(self.logger):
               self.logger(e)
@@ -207,13 +207,14 @@ class horryCountyNexradProcess(nexradProcess):
                   #Initialize the compareDate.
                   if(compareDate == None):
                     compareDate = entryDate;
-                    compareDate.replace(hour = startSummaryTime.hour, minute = startSummaryTime.minute, second = startSummaryTime.second)
+                    compareDate = compareDate.replace(hour = startSummaryTime.hour, minute = startSummaryTime.minute, second = startSummaryTime.second)
                   
                   delta = entryDate - compareDate
                   #We've hit our daily summary, write out the results.
                   if(delta.days >= 1):
-                    outBuf = "%s,%s,%f,%d\n"\
-                       % (compareDate.strftime("%Y-%m-%dT%H:%M:%S"),
+                    outBuf = "%s,%s,%s,%f,%d\n"\
+                       % (polygonName,
+                          compareDate.strftime("%Y-%m-%dT%H:%M:%S"),
                           entryDate.strftime("%Y-%m-%dT%H:%M:%S"), 
                           rainTotal, 
                           hourCnt)
@@ -224,7 +225,8 @@ class horryCountyNexradProcess(nexradProcess):
                     
                   rainTotal += float(line['Weighted Average'])
                   hourCnt += 1
-            #Testing code for parital day.      
+            """      
+            #Testing code for partial day.      
             if(hourCnt):
               outBuf = "%s,%s,%f,%d\n"\
                  % (compareDate.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -232,7 +234,7 @@ class horryCountyNexradProcess(nexradProcess):
                     rainTotal, 
                     hourCnt)
               watershedFile.write(outBuf)
-              
+            """
             #Finished with the watershed, close the file and move on to the next.
             watershedFile.close()
             #Reset the date file we are reading to the beginning of the file.
@@ -425,7 +427,9 @@ if __name__ == '__main__':
     parser = optparse.OptionParser()  
     parser.add_option("-c", "--ConfigFile", dest="configFile",
                       help="INI file containing various parameters for processing." )
-
+    parser.add_option("-b", "--BiWeeklyEndDate", dest="biWeeklyEnd",
+                      help="If set, this is the date used to determine the biweekly period.")
+    
     (options, args) = parser.parse_args()
 
     configFile = ConfigParser.RawConfigParser()
@@ -501,12 +505,14 @@ if __name__ == '__main__':
               sys.exit(-1)
 
           #We want to check todays date against the control file.
-          today = datetime.datetime.now()
-          today = today.replace(hour=0,minute = 0,second = 0,microsecond = 0)
+          biWeeklyTstDate = datetime.datetime.now()
+          biWeeklyTstDate = biWeeklyTstDate.replace(hour=0,minute = 0,second = 0,microsecond = 0)
+          if(options.biWeeklyEnd):
+            biWeeklyTstDate = datetime.datetime.strptime(options.biWeeklyEnd, "%Y-%m-%d")
           
           checkDate = dateControlFile(dateControlFilename, True)          
           #startDate,endDate = checkDate.getReportingDates(today)
-          reportDay, startDate, endDate = checkDate.isReportingDay(today)  
+          reportDay, startDate, endDate = checkDate.isReportingDay(biWeeklyTstDate)  
           if(logger):
             logger.debug("Report Day: %d StartDate: %s EndDate: %s" %(reportDay, startDate, endDate))   
            
@@ -528,11 +534,10 @@ if __name__ == '__main__':
               ftpDir = configFile.get(watershed, 'FtpDirectory')
               ftpUser = configFile.get(watershed, 'FtpUsername')
               ftpPwd = configFile.get(watershed, 'FtpPassword')              
+              nexradProc.ftpSettings(address=ftpAddress, user=ftpUser, pwd=ftpPwd, directory=ftpDir)
             except ConfigParser.Error, e:
               if(logger):
                 logger.exception(e)
-            else:
-              nexradProc.ftpSettings(address=ftpAddress, user=ftpUser, pwd=ftpPwd, directory=ftpDir)
               
           #Set flag on whether or not to create a KML file that contains the grids processed.
           if(writeImportKMLFile):
