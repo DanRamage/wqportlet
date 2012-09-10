@@ -1,3 +1,10 @@
+"""
+Revisions
+Date: 2012-09-10
+Author: DWR
+Changes: In object dateControlFile, we now work in epoch seconds. Had a bug in the test to see which 
+reporting period we were in. Using epoch makes the testing more straight forward
+"""
 #!/usr/bin/python
 import sys
 import os
@@ -304,7 +311,7 @@ class horryCountyNexradProcess(nexradProcess):
     return(nexradProcess.buildOuputFilename(self, paramSubs))
     
 class dateControlFile:
-  def __init__(self, dateFilename,logger=True):
+  def __init__(self, dateFilename,logger=True, fixYear=True):
     self.logger = None
     if(logger):
       self.logger = logging.getLogger(type(self).__name__)      
@@ -315,16 +322,25 @@ class dateControlFile:
       if(self.logger):
         self.logger.exception(e)
     else:
+      #2012-09-10 DWR
+      #Fix the year as we read the values in.
+      if(fixYear):
+        nowDate = datetime.datetime.utcnow()
       for line in dataSendFile:
         line = line.rstrip()
         if(len(line)):
           if(self.logger):
             self.logger.debug("Processing line: %s" % (line))
+            
           sendDate = datetime.datetime.strptime(line, '%B %d, %Y')
           sendDate = sendDate.replace()
+          #2012-09-10 DWR
+          if(fixYear):
+            sendDate = sendDate.replace(year=nowDate.year)  
+          sendDate = float(sendDate.strftime('%s')) 
           self.sendDates.append(sendDate)
       
-  
+  """
   def getDatesFromFile(self):
     try:
       dataSendFile = open(self.dateControlfilename, "r")
@@ -343,27 +359,44 @@ class dateControlFile:
           sendDates.append(sendDate)
           return(sendDates)
     return(None)
-
+  """
   def getCurrentReportingPeriod(self, dateToCheck):
     i = 0
     endDate = None
     startDate = None
+    fixEndYear = False
     datesListLen = len(self.sendDates) 
+    utcCheckDate = float(dateToCheck.strftime('%s'))
     while(i < datesListLen):
       testDate = self.sendDates[i] 
       #Dates are in chronological order, so once we our current date is greater or equal to the test date, we're at the period.
-      if(dateToCheck.month <= testDate.month and dateToCheck.day <= testDate.day):
+      #if(dateToCheck.month <= testDate.month and dateToCheck.day <= testDate.day):
+      if(testDate >= utcCheckDate):
         #If we are at the beginning of the list we'll get an index of -1, that's acceptable in python as it translates
         #to the end of the list. 
         startDate = self.sendDates[i-1]
         endDate = self.sendDates[i]
-        break        
+        #We're wrapping around, so we need to fix the end date as it will be the next year. 
+        if(i == 0):
+          fixEndYear = True 
+          
+        break
       #At the end of the list with no match? Then we are between the last entry in the list and the first entry.
       elif((i+1) == datesListLen):
         startDate = self.sendDates[i]
         endDate = self.sendDates[0]
+        #DWR 2012-09-10
+        #We're wrapping around, so we need to fix the end date as it will be the next year. 
+        fixEndYear = True 
       i += 1
-      
+    #DWR 2012-09-10
+    #COnvert to datetime objects from epoch.
+    startDate = datetime.datetime.fromtimestamp(startDate)
+    endDate = datetime.datetime.fromtimestamp(endDate)
+    #DWR 2012-09-10
+    if(fixEndYear):
+      endDate = endDate.replace(year=endDate.year + 1)
+       
     return(startDate,endDate)
 
       
@@ -372,12 +405,16 @@ class dateControlFile:
     #Get the reporting period we are currently in.
     startDate, endDate = self.getCurrentReportingPeriod(dateToCheck)
     if(startDate and endDate):
+      #DWR 2012-09-10
+      #Year fixed in __init__.
+      """
       if(fixYear):
         #Change the year to whatever the current year is if we are not at the first bi-week of the new year.
         nowDate = datetime.datetime.utcnow()
         if(startDate.month != 11 and endDate.month != 1):
           startDate = startDate.replace(year=nowDate.year)
-        endDate = endDate.replace(year=nowDate.year)          
+        endDate = endDate.replace(year=nowDate.year)
+      """          
       #Check to see if the dateToCheck matches the reporting day.
       if(endDate.month == dateToCheck.month and endDate.day == dateToCheck.day):
         return(True,startDate,endDate)
@@ -509,6 +546,9 @@ if __name__ == '__main__':
           biWeeklyTstDate = biWeeklyTstDate.replace(hour=0,minute = 0,second = 0,microsecond = 0)
           if(options.biWeeklyEnd):
             biWeeklyTstDate = datetime.datetime.strptime(options.biWeeklyEnd, "%Y-%m-%d")
+          
+          #biWeeklyTstDate = datetime.datetime.strptime('2012-12-21 08:30:17', "%Y-%m-%d %H:%M:%S")
+          #biWeeklyTstDate = biWeeklyTstDate.replace(hour=0,minute = 0,second = 0,microsecond = 0)
           
           checkDate = dateControlFile(dateControlFilename, True)          
           #startDate,endDate = checkDate.getReportingDates(today)
