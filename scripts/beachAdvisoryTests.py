@@ -1,5 +1,10 @@
 """
 Revisions
+Date: 2013-02-04
+Author: DWR
+Function: wqDataAccess:getAverageForObs
+Changes: Added qc_level condition to make sure we get valid data for platforms where we QC check.
+
 Date: 2011-10-11
 Author: DWR
 Function: wqEquations.overallPrediction
@@ -19,7 +24,7 @@ import math
 from dhecDB import dhecDB
 from pprint import pformat
 from xeniatools.NOAATideData import noaaTideData
-from xeniatools.xenia import dbXenia,dbTypes
+from xeniatools.xenia import dbXenia,dbTypes,qaqcTestFlags
 from xeniatools.xmlConfigFile import xmlConfigFile
 
 
@@ -162,7 +167,10 @@ class mlrPredictionTest(predictionTest):
   Return: A dictionary.
   """
   def getResults(self):
-    results = {'mlrPrediction' : predictionLevels(self.predictionLevel).__str__(), 
+    name = "%sPrediction" % (self.name)
+    results = {
+               name : predictionLevels(self.predictionLevel).__str__(),
+               #'mlrPrediction' : predictionLevels(self.predictionLevel).__str__(), 
                'log10MLRResult' : self.log10MLRResult,
                'mlrResult' : self.mlrResult}
     return(results)
@@ -193,7 +201,9 @@ class cartPredictionTest(predictionTest):
     return(self.predictionLevel)
 
   def getResults(self):
-    results = {'cartPrediction' : predictionLevels(self.predictionLevel).__str__()}
+    name = "%sPrediction" % (self.name)    
+    results = {name : predictionLevels(self.predictionLevel).__str__()}
+               #'cartPrediction' : predictionLevels(self.predictionLevel).__str__()}
     return(results)
 
 """
@@ -260,8 +270,9 @@ class outputKMLResults(outputResults):
         <tr><td>Prediction for Date:</td><td>%(endDate)s</td></tr>        
         <tr><td>Date Tests Run:</td><td>%(testRunDate)s</td></tr>        
         <tr><td>Overall Prediction:</td><td>%(ensemblePrediction)s</td></tr>
-        <tr><td>MLR:</td><td>%(mlrPrediction)s</td><td>log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</td></tr>
-        <tr><td>Cart:</td><td>%(cartPrediction)s</td></tr>"""
+        <tr><td>MLR:</td><td>%(dhecMLRPrediction)s</td><td>log10(etcoc): %(log10MLRResult)4.2f etcoc %(mlrResult)4.2f</td></tr>
+        <tr><td>Cart:</td><td>%(dhecCARTPrediction)s</td></tr>"""
+        
         
       try:        
         self.logger.info("Creating DHEC ETCOC Prediction KML file: %s" % (kmlFilepath))
@@ -484,7 +495,125 @@ Data used for station tests:
       if(self.logger != None):
         self.logger.exception(e)                             
     return(False)
+
+
+class outputJSONResults(outputResults):
+  def __init__(self, xmlConfigFile, logger=None):
+    outputResults.__init__(self, xmlConfigFile, logger)
+
+  def createOutput(self, testObjects, beginDate, endDate, testRunDate):
+    import simplejson as json
     
+    try:
+      tag = "//environment/stationTesting/results/outputResultList/outputType[@id=\"json\"]/filePath"
+      jsonFilepath = self.configFile.getEntry(tag)
+  
+      if(jsonFilepath != None):    
+        jsonResults = []
+        resultsInfo = {}
+        icons = {}
+        icons['NO TEST'] = "http://rcoos.org/resources/images/default/no_light16x16.png"
+        icons['LOW'] = "http://rcoos.org/resources/images/default/green_light16x16.png"
+        icons['MEDIUM'] = "http://rcoos.org/resources/images/default/yellow_light16x16.png"
+        icons['HIGH'] = "http://rcoos.org/resources/images/default/red_light16x16.png"
+        resultsInfo['icons'] = icons
+        
+        resultsInfo['testDate'] = ""
+        resultsInfo['runDate'] = ""
+        nexradDBSettings = self.configFile.getDatabaseSettingsEx('//environment/stationTesting/database/nexradDatabase/')
+        nexradDB = dhecDB(nexradDBSettings['dbName'],"dhec_testing_logger")
+        features = []
+        for wqObj in testObjects:
+          stationKeys = wqObj.results.keys()
+          stationKeys.sort()
+          dataUsed = ""
+          for station in stationKeys:
+            feature = {}
+            feature['type'] = 'Feature'
+            tstObj = wqObj.results[station]
+            platformHandle = "dhec.%s.monitorstation" % (station)
+            dbCursor = nexradDB.getPlatformInfo(platformHandle)
+            latitude = 0.0
+            longitude = 0.0
+            stationDesc = ""
+            geometry = {}
+            if(dbCursor != None):
+              row = dbCursor.fetchone()
+              if(row != None):
+                stationDesc = row['description']
+                geometry['type'] = "Point"
+                geometry['coordinates'] = [row['fixed_longitude'],row['fixed_latitude']]
+                feature['geometry'] = geometry
+            else:
+              self.logger.error("ERROR: Unable to get platform: %s data. %s" % (platformHandle, nexradDB.getErrorInfo()))
+              
+            property = {}
+            """
+            stationData = {
+              'station' : station,
+              'lat' : latitude,
+              'lon' : longitude,
+              'region' : wqObj.regionName,
+              'ensemble' : predictionLevels(tstObj.ensemblePrediction).__str__(),
+              #'testDate' : testRunDate.strftime('%Y-%m-%d %H:%M'),
+              #'endDate' : endDate.strftime('%Y-%m-%d %H:%M'),
+              'desc' : stationDesc}
+            
+            #All the tests are run at the same time and for the same time period, so we just store them once.
+            if(resultsInfo['testDate'] == ""):
+              resultsInfo['testDate'] = endDate.strftime('%Y-%m-%d %H:%M')
+            if(resultsInfo['runDate'] == ""):
+              resultsInfo['runDate'] = testRunDate.strftime('%Y-%m-%d %H:%M')
+              
+            #Get any specific computed variables from the test object. This is not the data that
+            #the equations used, but any intermediate values calculated while coming up with the prediction.
+            testData = {}
+            for test in tstObj.tests:
+              results = test.getResults()
+              name = test.name
+              testData[name] = results
+            stationData['tests'] = testData
+            """
+            #All the tests are run at the same time and for the same time period, so we just store them once.
+            if(resultsInfo['testDate'] == ""):
+              resultsInfo['testDate'] = endDate.strftime('%Y-%m-%d %H:%M')
+            if(resultsInfo['runDate'] == ""):
+              resultsInfo['runDate'] = testRunDate.strftime('%Y-%m-%d %H:%M')
+
+            property['station'] = station
+            property['region'] = wqObj.regionName
+            property['ensemble'] = predictionLevels(tstObj.ensemblePrediction).__str__()
+            property['desc'] = stationDesc
+              
+            #Get any specific computed variables from the test object. This is not the data that
+            #the equations used, but any intermediate values calculated while coming up with the prediction.
+            testData = {}
+            for test in tstObj.tests:
+              results = test.getResults()
+              name = test.name
+              testData[name] = results
+            property['tests'] = testData
+            
+            property['icon'] = tstObj.ensemblePrediction
+            
+            feature['properties'] = property
+            features.append(feature)
+        
+        stationData = {}
+        stationData['type'] = "FeatureCollection";
+        stationData['features'] = features
+            
+        resultsInfo['stationData'] = stationData
+            
+      jsonPlatformFile = open(jsonFilepath, "w")
+      jsonPlatformFile.write(json.dumps(resultsInfo, sort_keys=True))
+      jsonPlatformFile.close()
+      
+    except Exception, e:
+      if(self.logger != None):
+        self.logger.exception(e)
+      return(False)
+  
 """ 
 Class wqTest
 Purpose: This is the base class for the actually water quality prediction process.
@@ -614,18 +743,23 @@ class wqDataAccess(object):
                sensor_id = %d"\
               %(beginDate, endDate, sensorID)
       else:
+        #DWR 2013-02-04 Added qc_level check.
         sql = "SELECT AVG(m_value) as m_value_avg  FROM multi_obs\
                WHERE \
                (m_date >= '%s' AND \
                m_date < '%s') AND \
-               sensor_id = %d"\
-              %(beginDate, endDate, sensorID)
+               sensor_id = %d AND \
+               (qc_level = %d OR qc_level IS NULL)"\
+              %(beginDate, endDate, sensorID, qaqcTestFlags.DATA_QUAL_GOOD)
          
       dbCursor = self.obsDb.executeQuery(sql)
       if(dbCursor != None):
         row = dbCursor.fetchone()
         if(row['m_value_avg'] != None):         
           avg = float(row['m_value_avg'])
+          if(self.logger):
+            self.logger.debug("SQL: %s" % (sql))
+            self.logger.debug("platformHandle: %s obsName: %s(%s) avg: %s(%f)" % (platformHandle, obsName, uom, row['m_value_avg'], avg))                  
         return(avg)
     else:
       self.logger.error("No sensor ID found for observation: %s(%s) on platform: %s" %(obsName, uom, platformHandle))
