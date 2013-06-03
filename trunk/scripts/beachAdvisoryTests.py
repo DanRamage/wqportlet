@@ -280,19 +280,19 @@ class outputKMLResults(outputResults):
         doc = etcocKML.createDocument("DHEC ETCOC Predictions")
         doc.appendChild(etcocKML.createStyle(
             id="no_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/no_light16x16.png"))
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://secoora.org/resources/images/default/no_light16x16.png"))
         ))
         doc.appendChild(etcocKML.createStyle(
             id="low_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/green_light16x16.png"))            
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://secoora.org/resources/images/default/green_light16x16.png"))            
         ))
         doc.appendChild(etcocKML.createStyle(
             id="med_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/yellow_light16x16.png"))            
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://secoora.org/resources/images/default/yellow_light16x16.png"))            
         ))
         doc.appendChild(etcocKML.createStyle(
             id="hi_prediction",
-            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://rcoos.org/resources/images/default/red_light16x16.png"))                        
+            children = etcocKML.createIconStyle(scale=0.5, icon=etcocKML.createIcon(iconUrl="http://secoora.org/resources/images/default/red_light16x16.png"))                        
         ))
         for wqObj in testObjects:      
           
@@ -512,10 +512,10 @@ class outputJSONResults(outputResults):
         jsonResults = []
         resultsInfo = {}
         icons = {}
-        icons['NO TEST'] = "http://rcoos.org/resources/images/default/no_light16x16.png"
-        icons['LOW'] = "http://rcoos.org/resources/images/default/green_light16x16.png"
-        icons['MEDIUM'] = "http://rcoos.org/resources/images/default/yellow_light16x16.png"
-        icons['HIGH'] = "http://rcoos.org/resources/images/default/red_light16x16.png"
+        icons['NO TEST'] = "http://secoora.org/resources/images/default/no_light16x16.png"
+        icons['LOW'] = "http://secoora.org/resources/images/default/green_light16x16.png"
+        icons['MEDIUM'] = "http://secoora.org/resources/images/default/yellow_light16x16.png"
+        icons['HIGH'] = "http://secoora.org/resources/images/default/red_light16x16.png"
         resultsInfo['icons'] = icons
         
         resultsInfo['testDate'] = ""
