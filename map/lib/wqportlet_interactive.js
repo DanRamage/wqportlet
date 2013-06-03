@@ -1,4 +1,4 @@
-Ext.BLANK_IMAGE_URL = 'http://rcoos.org/resources/images/default/s.gif';
+Ext.BLANK_IMAGE_URL = 'http://secoora.org/resources/images/default/s.gif';
 
 
 Ext.namespace('rcoosmapping');
@@ -83,7 +83,7 @@ Ext.override(Ext.data.Connection, {
             return null;
         }
     },
-    
+
     scriptRequest : function(method, url, cb, data, options) {
         var transId = ++Ext.data.ScriptTagProxy.TRANS_ID;
         var trans = {
@@ -121,7 +121,7 @@ Ext.override(Ext.data.Connection, {
         this.transId = false;
         this.destroyScriptTrans(trans, true);
         var options = trans.options;
-        
+
 //      Attempt to parse a string parameter as XML.
         var doc;
         if (typeof o == 'string') {
@@ -147,7 +147,7 @@ Ext.override(Ext.data.Connection, {
         Ext.callback(options.success, options.scope, [response, options]);
         Ext.callback(options.callback, options.scope, [options, true, response]);
     },
-    
+
     handleScriptFailure: function(trans) {
         this.trans = false;
         this.destroyScriptTrans(trans, false);
@@ -159,7 +159,7 @@ Ext.override(Ext.data.Connection, {
         Ext.callback(options.failure, options.scope, [response, options]);
         Ext.callback(options.callback, options.scope, [options, false, response]);
     },
-    
+
     // private
     destroyScriptTrans : function(trans, isLoaded){
         document.getElementsByTagName("head")[0].removeChild(document.getElementById(trans.scriptId));
@@ -183,8 +183,8 @@ Ext.override(Ext.data.Connection, {
 
 rcoosmapping.wqResultsPopup = Ext.extend(GeoExt.Popup,{
   feature : undefined,
-  
-  constructor: function(config) 
+
+  constructor: function(config)
   {
     this.listeners = {afterrender : this.afterrender};
     this.feature = config.feature;
@@ -202,7 +202,7 @@ rcoosmapping.wqResultsPopup = Ext.extend(GeoExt.Popup,{
                       height: this.getInnerHeight(),
                       id: 'tabPanel',
                       activeTab: 0
-                     });  
+                     });
     this.add(tabPanel);
     var resultsPanel = new Ext.Panel(
       {
@@ -219,7 +219,7 @@ rcoosmapping.wqResultsPopup = Ext.extend(GeoExt.Popup,{
           id: 'wqDataPanelPopup',
           title: "Data Used",
           autoScroll: true,
-          html : this.feature.attributes.data.value       
+          html : this.feature.attributes.data.value
         });
       tabPanel.add(dataPanel);
     }
@@ -231,8 +231,8 @@ rcoosmapping.wqResultsLayer  = Ext.extend(OpenLayers.Layer.Vector,{
   popup : undefined,
   mapObj : undefined,
   googAnalytics : undefined,
-  
-  constructor: function(name, options) 
+
+  constructor: function(name, options)
   {
     rcoosmapping.wqResultsLayer.superclass.constructor.call(this, name, options);
   },
@@ -240,17 +240,17 @@ rcoosmapping.wqResultsLayer  = Ext.extend(OpenLayers.Layer.Vector,{
   {
     this.googAnalytics = googAnalytics;
   },
-  
+
   createSelectFeature : function(mapObj)
   {
     this.mapObj = mapObj;
-    ctSelectFeature = new OpenLayers.Control.SelectFeature([this], 
+    ctSelectFeature = new OpenLayers.Control.SelectFeature([this],
     {
       onSelect: this.kmlClick,
       scope: this
     });
     this.mapObj.addControl(ctSelectFeature);
-    ctSelectFeature.activate();    
+    ctSelectFeature.activate();
   },
   clearPopup : function()
   {
@@ -259,11 +259,11 @@ rcoosmapping.wqResultsLayer  = Ext.extend(OpenLayers.Layer.Vector,{
       this.popup.close();
       this.popup = undefined;
     }
-  },  
+  },
   kmlClick: function(feature)
   {
     this.clearPopup();
-    
+
     var title;
     if(feature.attributes.station != undefined)
     {
@@ -285,13 +285,13 @@ rcoosmapping.wqResultsLayer  = Ext.extend(OpenLayers.Layer.Vector,{
         anchored: true,
         feature : feature
     });
-    this.popup.show();    
+    this.popup.show();
     if(this.googAnalytics != undefined)
     {
-      var stationName = Ext.util.Format.trim(feature.attributes.station.value);      
-      this.googAnalytics.trackEvent("WQ Station", "Click", stationName);    
+      var stationName = Ext.util.Format.trim(feature.attributes.station.value);
+      this.googAnalytics.trackEvent("WQ Station", "Click", stationName);
     }
-  }  
+  }
 });
 
 
@@ -300,22 +300,22 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
 {
   hfradarPlatforms : null,
   insituPlatforms : null,
-  
-  constructor: function(config) 
-  {    
+
+  constructor: function(config)
+  {
     rcoosmapping.wqPortletMap.superclass.constructor.call(this, config);
   },
   addLayers : function(configParams)
   {
-    rcoosmapping.wqPortletMap.superclass.addLayers.call(this, configParams);       
-    var wqResults = new rcoosmapping.wqResultsLayer("Water Quality Results", 
+    rcoosmapping.wqPortletMap.superclass.addLayers.call(this, configParams);
+    var wqResults = new rcoosmapping.wqResultsLayer("Water Quality Results",
       {
         strategies: [new OpenLayers.Strategy.Fixed()],
         projection: new OpenLayers.Projection("EPSG:4326"),
         protocol: new OpenLayers.Protocol.HTTP({
             url: "http://129.252.139.124/mapping/xenia/feeds/dhec/etcocPredictions.kml",
             format: new OpenLayers.Format.KML({
-                extractStyles: true, 
+                extractStyles: true,
                 extractAttributes: true,
                 maxDepth: 3
             })
@@ -325,13 +325,44 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
         QUERYABLE: true
       });
       wqResults.setGoogleAnalytics(this.googAnalytics);
-    
+
     this.olMap.addLayer(wqResults);
     wqResults.createSelectFeature(this.olMap);
-  
+
+      var watershedStyles = new OpenLayers.StyleMap({
+          "default": new OpenLayers.Style({
+              fillColor: "#ffcc66",
+              strokeColor: "#ff9933",
+              strokeWidth: 2,
+              graphicZIndex: 1
+          }),
+          "select": new OpenLayers.Style({
+              fillColor: "#66ccff",
+              strokeColor: "#3399ff",
+              graphicZIndex: 2
+          })
+      });
+      watersheds = new OpenLayers.Layer.GML("Watershed Boundaries",
+          "http://secoora.org/wqportlet/data/kml/watershed.kml",
+          {
+            format: OpenLayers.Format.KML,
+            projection: new OpenLayers.Projection("EPSG:4326"),
+            formatOptions:
+            {
+              extractStyles: false,
+              extractAttributes: true
+            },
+            GROUP: 'Overlays',
+            visibility:false,
+            styleMap: watershedStyles
+          }
+       );
+      this.olMap.addLayer(watersheds);
+
+
   },
 
-  treeNodeCheckChange : function(node, checked)  
+  treeNodeCheckChange : function(node, checked)
   {
     if(this.googAnalytics !== undefined && checked)
     {
@@ -344,11 +375,11 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
       }
     }
   },
-  
+
   createToolbar : function(groupName)
   {
     var createSeparator = function(toolbarItems)
-    { 
+    {
        toolbarItems.push(" ");
        toolbarItems.push("-");
        toolbarItems.push(" ");
@@ -383,10 +414,10 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
               this.insituPlatforms.enableToolTips(true);
             }
           }
-          
+
         },
         //text: 'Zoom In',
-        scope: this,        
+        scope: this,
         map: this.olMap,
         iconCls: 'zoomin',
         toggleGroup: groupName,
@@ -413,7 +444,7 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
             {
               this.insituPlatforms.enableToolTips(true);
             }
-          }          
+          }
         },
         scope: this,
         map: this.olMap,
@@ -442,14 +473,14 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
     this.toolbarItems.push(action);
 
     createSeparator(this.toolbarItems);
-       
+
     action = new Ext.Action({
         //control: new OpenLayers.Control.WMSGetFeatureInfo({
         //    isDefault: true
         //}),
         handler: function(){
               if(this.insituPlatforms !== null)
-              {              
+              {
                 this.focus();
               }
             },
@@ -478,8 +509,8 @@ rcoosmapping.wqPortletMap = Ext.extend(rcoosmapping.olMap,
     });
     this.toolbarItems.push(action);
   },
-  init : function(dataServerIP,mapservIP,tilecacheIP,configParams) 
-  {  
+  init : function(dataServerIP,mapservIP,tilecacheIP,configParams)
+  {
     rcoosmapping.wqPortletMap.superclass.init.call(this, dataServerIP,mapservIP,tilecacheIP,configParams);
   }
 });
@@ -492,7 +523,7 @@ rcoosmapping.app = function() {
   this.mapservIP;
   this.tilecacheIP;
   this.googAnalytics;
-  return {    
+  return {
     processConfig : function(response, options)
     {
 
@@ -506,26 +537,26 @@ rcoosmapping.app = function() {
       }
 
       var mapTabs = jsonObject.tabs;
-      
-      
-      
+
+
+
       var len = mapTabs.length;
-      var i;      
+      var i;
       var tabs = [];
       for(i = 0; i < len; i++)
-      {        
+      {
         var tabOptions = mapTabs[i];
         var mapObj = new rcoosmapping.wqPortletMap();
         //mapObj.setAnalytics(this.googAnalytics);
         tabOptions.googAnalytics = this.googAnalytics;
         tabOptions.proxyHost = jsonObject.serverSettings.proxyHost;
         mapObj.init(this.dataServerIP,this.mapservIP,this.tilecacheIP, tabOptions);
-        mapObj.createPanel(tabOptions.name);
+        //mapObj.createPanel(tabOptions.name);
         tabs.push(mapObj);
-        mapObj.mapInitialized(true);          
-        
+        mapObj.mapInitialized(true);
+
       }
-      this.mapTabs = new Ext.TabPanel({            
+      this.mapTabs = new Ext.TabPanel({
         region: 'center',
         activeTab: 0,
         deferredRender: true,
@@ -539,7 +570,7 @@ rcoosmapping.app = function() {
                 region: 'north',
                 el: 'header',
                 style: 'background-color: #FFFFFF;'
-              }),             
+              }),
             {
               region: 'center',
               layout: 'border',
@@ -552,15 +583,15 @@ rcoosmapping.app = function() {
       {
         mapObj.olMap.zoomToExtent(
             new OpenLayers.Bounds(
-                tabOptions.mapConfig.mapExtents.zoomToExtent.lowerLeft.lon, 
+                tabOptions.mapConfig.mapExtents.zoomToExtent.lowerLeft.lon,
                 tabOptions.mapConfig.mapExtents.zoomToExtent.lowerLeft.lat,
-                tabOptions.mapConfig.mapExtents.zoomToExtent.upperRight.lon, 
+                tabOptions.mapConfig.mapExtents.zoomToExtent.upperRight.lon,
                 tabOptions.mapConfig.mapExtents.zoomToExtent.upperRight.lat
             ).transform(mapObj.olMap.displayProjection, mapObj.olMap.projection)
         );
-        
+
       }
-      
+
       this.mapTabs.on({
         tabchange: function(panel,tab)
         {
@@ -572,16 +603,16 @@ rcoosmapping.app = function() {
             curTab.clearPopup();
           }
         }
-      });          
+      });
     },
-    
-    init: function(dataServerIP,mapservIP,tilecacheIP,jsonLayerCfgFile) {   
+
+    init: function(dataServerIP,mapservIP,tilecacheIP,jsonLayerCfgFile) {
       //Create the googleAnalytics object. We use it to track page view as well as other events such as what layer the user choose or platform
       //the user clicks on.
       this.dataServerIP = dataServerIP;
       this.mapservIP = mapservIP;
       this.tilecacheIP = tilecacheIP;
-      
+
       var url = jsonLayerCfgFile;
       Ext.Ajax.request({
          url: url,
@@ -594,7 +625,7 @@ rcoosmapping.app = function() {
             return;
          },
          scope: this
-      });      
-    }    
+      });
+    }
   }
 }(); // end of app
