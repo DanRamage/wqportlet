@@ -7,7 +7,7 @@
     it switches out the site1.ini file to the other servers.
     */
     /*** parse the ini file ***/
-    $config = parse_ini_file("/home2/ratingsb/public_html/rcoos/wqportlet/site1.ini", 1);
+    $config = parse_ini_file("./wqportlet.ini", 1);
     /*** assign variables ***/
     $server_ip = $config['site']['ip'];
     $tilecache_ip = $config['uscmapping']['tilecacheip'];
@@ -21,42 +21,60 @@
     <meta http-equiv="X-UA-Compatible" content="IE=EmulateIE7"/>
     <title>DHEC Water Quality Map</title>
 
-    <script type="text/javascript" src="http://rcoos.org/lib/jsUtils.js"></script>
-   
-    <script type="text/javascript" src="http://rcoos.org/lib/ExtJS-3.3.0/adapter/ext/ext-base.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/ExtJS-3.3.0/ext-all.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/OpenLayers-2.10/OpenLayers.js"></script>
+    <style type="text/css">
+    html, body {
+        font: normal 12px verdana;
+        margin: 0;
+        padding: 0;
+        border: 0 none;
+        overflow: hidden;
+        height: 100%;
+    }
 
-    <script type="text/javascript" src="http://rcoos.org/lib/ComparisonFilterEx.js"></script>
-        
-    <script type="text/javascript" src="http://rcoos.org/lib/GeoExt-1.0/script/GeoExt.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/GeoExt-1.0/lib/GeoExt/widgets/tree/TreeNodeUIEventMixinExtended.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/GeoExt-1.0/lib/GeoExt/widgets/tree/LayerOpacitySliderPlugin.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/GeoExt-1.0/lib/GeoExt/widgets/tree/RadioButtonPlugin.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/GeoExt-1.0/lib/GeoExt/widgets/tree/LayerInfoPlugin.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/adapter-extjs.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/Highcharts/js/highcharts.src.js"></script>
-    
-    
-    <script type="text/javascript" src="http://rcoos.org/lib/Ext.ux.HighChart.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/units_conversion.js"></script>
-    <script type="text/javascript" src="http://rcoos.org/lib/olMap1.1.js"></script>
-    <script type="text/javascript" src="lib/wqportlet_interactive.js"></script>
+    #init-loading-mask {
+      position: absolute;
+      left:     0;
+      top:      0;
+      width:    100%;
+      height:   100%;
+      z-index:  20000;
+      background-color: white;
+    }
 
-    <link rel="stylesheet" type="text/css" href="http://rcoos.org/resources/css/ext-all-3-3-0.css" />
-    <link rel="stylesheet" type="text/css" href="http://rcoos.org/resources/css/popup.css" />
-    <link rel="stylesheet" type="text/css" href="http://rcoos.org/resources/css/mappanel.css"/>
-    <link rel="stylesheet" type="text/css" href="http://rcoos.org/resources/css/style.css" />
-    <link rel="stylesheet" type="text/css" href="http://rcoos.org/resources/css/layout_objects.css" />
-    <link rel="stylesheet" type="text/css" href="http://rcoos.org/resources/css/crcoos.css" />
-    
-   <script src="http://maps.google.com/maps?file=api&amp;v=2&amp;sensor=false
-    &amp;key=ABQIAAAAL73Z-9MqNqy4W5Qwupis9hTKuFt3j0NEAkwBcuHXDn5pfppdVRRCBqyXC0i9aWnCPpmF89nT_5NB6w"
-    type="text/javascript">
-   </script>
-    
+    #logo {
+      position: absolute;
+      left:     50%;
+      top:      50%;
+      padding:  2px;
+      z-index:  20001;
+      height:   auto;
+      margin:   -150px 0 0 -150px;
+    }
 
-  
+    #init-loading {
+      position: absolute;
+      left:     50%;
+      top:      50%;
+      padding:  2px;
+      z-index:  20001;
+      height:   auto;
+      margin:   -35px 0 0 -70px;
+    }
+
+    #init-loading .init-loading-indicator {
+      background: url(http://129.252.37.86/rcoos/resources/lib/ExtJS-3.4.0/resources/images/default/shared/large-loading.gif) no-repeat;
+      color:      #555;
+      font:       bold 20px tahoma,arial,helvetica;
+      padding:    8px 42px;
+      margin:     0;
+      text-align: center;
+      height:     auto;
+    }
+    </style>
+
+
+
+
     <style type="text/css">
     html, body {
         font: normal 12px verdana;
@@ -71,14 +89,23 @@
     var gaJsHost = (("https:" == document.location.protocol) ? "https://ssl." : "http://www.");
     document.write(unescape("%3Cscript src='" + gaJsHost + "google-analytics.com/ga.js' type='text/javascript'%3E%3C/script%3E"));
   </script>
-  <script type="text/javascript">    
+  <script type="text/javascript">
     function init()
     {
       var server_ip = "<?php echo $server_ip; ?>";
       var tilecache_ip = "<?php echo $tilecache_ip; ?>";
       var mapserver_ip = "<?php echo $mapserver_ip; ?>";
       var jsonConfigFileURL = "<?php echo $jsonConfigFileURL; ?>";
-      
+
+      setTimeout(function()
+      {
+	Ext.get('init-loading').remove();
+	Ext.get('logo').remove();
+	Ext.get('init-loading-mask').fadeOut({remove:true});
+      },
+      250);
+
+
       rcoosmapping.app.init(server_ip,mapserver_ip,tilecache_ip,jsonConfigFileURL);
     }
   </script>
@@ -86,8 +113,78 @@
 
 
 <body onload="init()">
-  <div class="logo" id="header"><a href="http://carolinasrcoos.org"><img src="resources/images/legend/rcoos_hdr.gif"></img></a></div>
+  <div id="init-loading-mask"></div>
+    <div id="logo">
+      <a><img src="http://129.252.37.86/rcoos/resources/images/default/secoora_logo.png"></img></a>
+    </div>
+    <div id="init-loading">
+      <div class="init-loading-indicator">
+        Loading Map...
+    </div>
+  </div>
+
+
+  <script type="text/javascript" src="http://secoora.org/resources/lib/jsUtils.js"></script>
+   <!--
+  <script type="text/javascript" src="http://secoora.org/resources/lib/ExtJS-3.3.0/adapter/ext/ext-base.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/ExtJS-3.3.0/ext-all.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/OpenLayers/OpenLayers.js"></script>
+
+  <script type="text/javascript" src="http://secoora.org/resources/lib/ComparisonFilterEx.js"></script>
+
+  <script type="text/javascript" src="http://secoora.org/resources/lib/GeoExt/script/GeoExt.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/widgets/tree/TreeNodeUIEventMixinExtended.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/widgets/tree/LayerOpacitySliderPlugin.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/widgets/tree/RadioButtonPlugin.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/widgets/tree/LayerInfoPlugin.js"></script>
+  <script type="text/javascript" src="http://secoora.org/resources/lib/adapter-extjs.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/adapter-extjs.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/Highcharts-2.1.9/js/highcharts.src.js"></script>
+
+  <script type="text/javascript" src="http://secoora.org/resources/lib/units_conversion.js"></script>
+
+  -->
+
+  <script src="http://maps.google.com/maps?file=api&amp;v=2&amp
+    &amp;key=ABQIAAAAL5jib_opLCP7Wbp8KkI49BQRLwGjQ0N4hCREsz5JX1sytCQh6xRdo5GWlZ2ySn7NExFI1qxhd2TJ2Q"
+    type="text/javascript">
+  </script>
+
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/ExtJS-3.4.0/adapter/ext/ext-base.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/ExtJS-3.4.0/ext-all.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/OpenLayers-2.10/OpenLayers.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/GeoExt-1.1/script/GeoExt.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/tree/TreeNodeUIEventMixinExtended.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/tree/LayerOpacitySliderPlugin.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/tree/RadioButtonPlugin.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/tree/LayerInfoPlugin.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/RadioButtonPlugin.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/LayerInfoPlugin.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/widgets/layerInfoWidget.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/adapter-extjs.js"></script>
+
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/Highcharts-2.1.9/js/highcharts.src.js"></script>
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/Highcharts-2.1.2/Ext.ux.HighChart.js"></script>
+
+
+  <script type="text/javascript" src="http://129.252.37.86/rcoos/resources/lib/olMap1.1.1.js"></script>
+  <script type="text/javascript" src="http://secoora.org/wqportlet/lib/wqportlet_interactive.js"></script>
+
+  <link rel="stylesheet" type="text/css" href="http://secoora.org/resources/css/ext-all-3-3-0.css" />
+  <link rel="stylesheet" type="text/css" href="http://secoora.org/resources/css/popup.css" />
+  <link rel="stylesheet" type="text/css" href="http://secoora.org/resources/css/style.css" />
+  <link rel="stylesheet" type="text/css" href="http://secoora.org/resources/css/layout_objects.css" />
+  <link rel="stylesheet" type="text/css" href="resources/css/wqportlet.css" />
+  <link rel="stylesheet" type="text/css" href="resources/css/mappanel.css"/>
+
+
+  <div id="header">
+    <div class="logo" id="page_banner">
+      <div id="banner"></div>
+    </div>
+   </div>
   <div id="center"></div>
+
 </body>
 
 </html>
