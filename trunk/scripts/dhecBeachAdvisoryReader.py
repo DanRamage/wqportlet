@@ -1,3 +1,10 @@
+"""
+Revisions
+Date: 2013-07-09
+Function: waterQualityAdvisor:processData
+Changes: The web page we were scraping to get the actual sample data has been taken down. Added code to handle the
+webquery when nothing is returned. We look use the historical data for this case as well.
+"""
 import sys
 #import requests
 import logging.config
@@ -10,7 +17,8 @@ import urllib
 import urllib2
 import socket 
 import datetime
-from dhecDB import dhecDB
+import csv
+from decimal import *
 
 def docExtract(srcMap,doc):
   """
@@ -107,13 +115,18 @@ class waterQualityAdvisory(object):
       lineCnt = 0
       features = []
       try:
+        locale = None
+        beach = None
         for line in srcFile:
           #Bump past first 2 lines since they are the header rows.
           if(lineCnt > 1):
             #Verify we have valid coordinates.
             if(len(line['latitude']) and len(line['longitude'])):
               try:              
-                geometry = geojson.Point(coordinates=[float(line['longitude']), float(line['latitude'])])
+                latitude = float(line['latitude'].strip())
+                longitude = float(line['longitude'].strip())
+
+                geometry = geojson.Point(coordinates=[longitude, latitude])
               except ValueError,e:
                 if(self.logger):
                   self.logger.error("Line: %d invalid value for either latitude or longitude" % (lineCnt))
@@ -121,11 +134,15 @@ class waterQualityAdvisory(object):
               #Now let's get the rest of the properties.
               else:
                 properties = {}
+                if(len(line['city-county'].strip()) and locale != line['city-county']):
+                  locale = line['city-county']
+                if(len(line['beachname'].strip()) and beach != line['beachname']):
+                  beach = line['beachname']
                 properties['station'] = line['station']
                 properties['desc'] = line['address']
-                properties['locale'] = line['city-county']
+                properties['locale'] = locale
                 properties['epaid'] = line['epabeachid']
-                properties['beach'] = line['beachname']
+                properties['beach'] = beach
                 properties['len'] = line['beachlen']
                 properties['sign'] = False
                 if(line['permanentsign'].lower() == 'yes'):
@@ -151,6 +168,71 @@ class waterQualityAdvisory(object):
       srcFileObj.close()
 
   """
+  Function: createHistoricalJSON
+  Purpose: From a CSV file of historical water quality data, create/append to a JSON file of the data.
+  Parameters: 
+    inputFile - String with the filename of the CSV file to import
+    outputFile - Filename of the JSON file to create/append to.
+  Returns:
+    JSON object with the data.
+  """
+  def createHistoricalJSON(self, inputFilename, outputFilename):
+    waterQualityJson = None
+    fieldNames = ["Station",
+                  "Inspection Date",
+                  "Insp Time",
+                  "Lab Number",
+                  "Inspection Type",
+                  "E Sign",
+                  "ETCOC",
+                  "Tide",
+                  "Wind/Curr",
+                  "Weather"]
+    try:
+      inputFile = open(inputFilename, 'rU')
+      dataFile = csv.DictReader(inputFile, fieldNames)
+      outFile = open(outputFilename, 'w')
+    except IOError, e:
+      if(self.logger):
+        self.logger.exception(e)
+    else:
+      jsonObj = {}
+      lineNum = 0
+      for line in dataFile:
+        if(lineNum > 0):
+          stationData = []
+          if(line['Station'] in jsonObj):
+            stationData = jsonObj[line['Station']]
+          else:
+            jsonObj[line['Station']] = stationData
+          
+          dateVal = datetime.datetime.strptime(line['Inspection Date'], "%d-%b-%y")
+          
+          #timeVal = datetime.datetime.strptime(line['Insp Time'], "%H%M")          
+          #dateVal += (' ' + timeVal.strftime("%H:%M:00"))
+          #dateVal = datetime.datetime.strptime(dateVal, "%Y-%m-%d %H:%M:00")
+          #stationDict[dateVal] = line['ETCOC']
+          wqObj = {'date' : dateVal, 'value' : line['ETCOC']}
+          stationData.append(wqObj)
+          
+        lineNum += 1
+    #Sort
+    for index,dataObj in enumerate(jsonObj):
+      stationEntries = jsonObj[dataObj]
+      stationEntries.sort(key=lambda r: r['date'])
+      #Convert the datetime objects into strings for the JSONification process.
+      for index2,stationObj in enumerate(stationEntries):
+        #stationObj['date'] = stationObj['date'].strftime("%Y-%m-%d %H:%M:00")
+        stationObj['date'] = stationObj['date'].strftime("%Y-%m-%d")
+    try:
+      outFile.write(geojson.dumps(jsonObj, sort_keys=True, indent=4 * ' '))      
+    except Exception,e:
+      if(self.logger):
+        self.logger.exception(e)
+    outFile.close()  
+    inputFile.close()        
+    return(jsonObj)
+  """
   Function: processData
   Purpose: Scrapes the DHEC web pages for each station pulling in all the test results. The pages are created
     through a POST command and the data is in a table in the returned page.
@@ -162,10 +244,36 @@ class waterQualityAdvisory(object):
   Return:
     None
   """
-  def processData(self, stationNfoList, jsonOutputFilepath):
+  def processData(self, stationNfoList, jsonOutputFilepath, historyWQ):
     if(self.logger):
       self.logger.info("Begin data processing.")
     resultsData = self.__scrapeResults(stationNfoList)
+    #DWR 2012-12-05
+    if(len(resultsData)):
+      for index,stationName in enumerate(resultsData):      
+        if(len(resultsData[stationName]['results']) != 0):
+          if(self.logger):
+            self.logger.debug("Station: %s no results from webquery, adding in historical." % (stationName))
+          if(stationName in historyWQ):
+            resultsData[stationName]['results'] = historyWQ[stationName]
+    #DWR 2013-07-09
+    #No result at all.
+    else:
+      resultsData = {}
+      if(self.logger):
+        self.logger.debug("Web query failed.")
+      for feature in stationNfoList['features']:
+        stationName = feature['id']
+        resultsData[stationName] = {'results' : {}}
+        if(self.logger):
+          self.logger.debug("Station: %s no results from webquery, adding in historical." % (stationName))
+        if(stationName in historyWQ):
+            resultsData[stationName]['results'] = historyWQ[stationName]
+        else:
+          if(self.logger):
+            self.logger.debug("Station: %s not found in historical." % (stationName))
+            
+      
     self.__outputGeoJson(stationNfoList, resultsData, jsonOutputFilepath)
     if(self.logger):
       self.logger.info("Data processing completed.")
@@ -307,6 +415,8 @@ def main():
                     help="INI Configuration file." )
   parser.add_option("-i", "--ImportStationsFile", dest="importStations",
                     help="Stations file to import." )
+  parser.add_option("-t", "--ImportStationsTestResultsFile", dest="importStationsTestResultsFile",
+                    help="Stations file to import." )
   (options, args) = parser.parse_args()
   
   if(options.configFile is None):
@@ -342,7 +452,9 @@ def main():
     
     #Filepath to the geoJSON file that contains the station data for all the stations.
     stationGeoJsonFile = configFile.get('stationData', 'stationGeoJsonFile')
-      
+    
+    #The past WQ results.
+    stationWQHistoryFile = configFile.get('stationData', 'stationWQHistoryFile')
   
   except ConfigParser.Error, e:
     if(logger):
@@ -376,13 +488,19 @@ def main():
     """  
     try:      
       advisoryObj = waterQualityAdvisory(baseUrl, True)
+      if(options.importStationsTestResultsFile):
+        advisoryObj.createHistoricalJSON(options.importStationsTestResultsFile, "/Users/danramage/tmp/dhec/monitorstations/historicalWQ.json")
       if(options.importStations):
-        advisoryObj.createStationGeoJSON(options.importStations, stationGeoJsonFile)
+        advisoryObj.createStationGeoJSON(options.importStations, stationGeoJsonFile)      
       else:
         stationDataFile = open(stationGeoJsonFile, "r")
-        stationList = stationJson = geojson.load(stationDataFile)
+        stationList = geojson.load(stationDataFile)
         stationDataFile.close()
-        advisoryObj.processData(stationList, jsonFilepath)
+        #See if we have a historical WQ file, if so let's use that as well.
+        historyWQFile = open(stationWQHistoryFile, "r")
+        historyWQ = geojson.load(historyWQFile)
+        
+        advisoryObj.processData(stationList, jsonFilepath, historyWQ)
     except IOError,e:
       if(logger):
         logger.exception(e)
