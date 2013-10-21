@@ -1,3 +1,10 @@
+"""
+Revisions
+Date: 2013-07-09
+Function: waterQualityAdvisor:processData
+Changes: The web page we were scraping to get the actual sample data has been taken down. Added code to handle the
+webquery when nothing is returned. We look use the historical data for this case as well.
+"""
 import sys
 #import requests
 import logging.config
@@ -6,11 +13,14 @@ import ConfigParser
 import copy
 from lxml import etree    
 import geojson
-import urllib
-import urllib2
+#import urllib
+#import urllib2
+import requests
 import socket 
 import datetime
+import csv
 from decimal import *
+import httplib
 
 def docExtract(srcMap,doc):
   """
@@ -58,8 +68,13 @@ class waterQualityAdvisory(object):
   def __init__(self, baseUrl, logger=True):
     self.baseUrl = baseUrl    #The URL to the DHEC page to get the station data. 
                               #This is without the POST parameter 'station' which is added at the point the request is created.
+
+    #httplib.HTTPConnection.debuglevel = 1                         
     if(logger):
       self.logger = logging.getLogger(type(self).__name__)
+      #requests_log = logging.getLogger("requests.packages.urllib3")
+      #requests_log.setLevel(logging.DEBUG)
+      #requests_log.propagate = True      
     
     self.pageDataDict = {}
     self.pageDataDict['results'] = {
@@ -160,6 +175,71 @@ class waterQualityAdvisory(object):
       srcFileObj.close()
 
   """
+  Function: createHistoricalJSON
+  Purpose: From a CSV file of historical water quality data, create/append to a JSON file of the data.
+  Parameters: 
+    inputFile - String with the filename of the CSV file to import
+    outputFile - Filename of the JSON file to create/append to.
+  Returns:
+    JSON object with the data.
+  """
+  def createHistoricalJSON(self, inputFilename, outputFilename):
+    waterQualityJson = None
+    fieldNames = ["Station",
+                  "Inspection Date",
+                  "Insp Time",
+                  "Lab Number",
+                  "Inspection Type",
+                  "E Sign",
+                  "ETCOC",
+                  "Tide",
+                  "Wind/Curr",
+                  "Weather"]
+    try:
+      inputFile = open(inputFilename, 'rU')
+      dataFile = csv.DictReader(inputFile, fieldNames)
+      outFile = open(outputFilename, 'w')
+    except IOError, e:
+      if(self.logger):
+        self.logger.exception(e)
+    else:
+      jsonObj = {}
+      lineNum = 0
+      for line in dataFile:
+        if(lineNum > 0):
+          stationData = []
+          if(line['Station'] in jsonObj):
+            stationData = jsonObj[line['Station']]
+          else:
+            jsonObj[line['Station']] = stationData
+          
+          dateVal = datetime.datetime.strptime(line['Inspection Date'], "%d-%b-%y")
+          
+          #timeVal = datetime.datetime.strptime(line['Insp Time'], "%H%M")          
+          #dateVal += (' ' + timeVal.strftime("%H:%M:00"))
+          #dateVal = datetime.datetime.strptime(dateVal, "%Y-%m-%d %H:%M:00")
+          #stationDict[dateVal] = line['ETCOC']
+          wqObj = {'date' : dateVal, 'value' : line['ETCOC']}
+          stationData.append(wqObj)
+          
+        lineNum += 1
+    #Sort
+    for index,dataObj in enumerate(jsonObj):
+      stationEntries = jsonObj[dataObj]
+      stationEntries.sort(key=lambda r: r['date'])
+      #Convert the datetime objects into strings for the JSONification process.
+      for index2,stationObj in enumerate(stationEntries):
+        #stationObj['date'] = stationObj['date'].strftime("%Y-%m-%d %H:%M:00")
+        stationObj['date'] = stationObj['date'].strftime("%Y-%m-%d")
+    try:
+      outFile.write(geojson.dumps(jsonObj, sort_keys=True, indent=4 * ' '))      
+    except Exception,e:
+      if(self.logger):
+        self.logger.exception(e)
+    outFile.close()  
+    inputFile.close()        
+    return(jsonObj)
+  """
   Function: processData
   Purpose: Scrapes the DHEC web pages for each station pulling in all the test results. The pages are created
     through a POST command and the data is in a table in the returned page.
@@ -171,14 +251,53 @@ class waterQualityAdvisory(object):
   Return:
     None
   """
-  def processData(self, stationNfoList, jsonOutputFilepath):
+  def processData(self, stationNfoList, jsonOutputFilepath, historyWQ):
     if(self.logger):
       self.logger.info("Begin data processing.")
     resultsData = self.__scrapeResults(stationNfoList)
+    #DWR 2012-12-05
+    if(len(resultsData)):
+      for index,stationName in enumerate(resultsData):      
+        if(len(resultsData[stationName]['results']) == 0):
+          if(self.logger):
+            self.logger.debug("Station: %s no results from webquery, adding in historical." % (stationName))
+          if(stationName in historyWQ):
+            resultsData[stationName]['results'] = historyWQ[stationName]
+    #DWR 2013-07-09
+    #No result at all.
+    else:
+      resultsData = {}
+      if(self.logger):
+        self.logger.debug("Web query failed.")
+      for feature in stationNfoList['features']:
+        stationName = feature['id']
+        resultsData[stationName] = {'results' : {}}
+        if(self.logger):
+          self.logger.debug("Station: %s no results from webquery, adding in historical." % (stationName))
+        if(stationName in historyWQ):
+            resultsData[stationName]['results'] = historyWQ[stationName]
+        else:
+          if(self.logger):
+            self.logger.debug("Station: %s not found in historical." % (stationName))
+            
+      
     self.__outputGeoJson(stationNfoList, resultsData, jsonOutputFilepath)
     if(self.logger):
       self.logger.info("Data processing completed.")
-    
+  """
+  Function: findSecurityParams
+  Purpose: The web page was re-written implementing crappy dot net security to prevent injection.
+  """  
+  def findSecurityParams(self, htmlDoc):
+    params = None
+    try:
+      params =  { '__VIEWSTATE' : str(htmlDoc.xpath("//input[@id='__VIEWSTATE'] /@value")[0]),
+                  '__EVENTVALIDATION' : str(htmlDoc.xpath("//input[@id='__EVENTVALIDATION' ] /@value")[0])
+                }
+    except Exception,e:
+      if(self.logger):
+        self.logger.exception(e)
+    return(params)  
   """
   Function: __scrapeResults
   Purpose: This is the function that loops through the station list, queries the webpage for the results creating the individual
@@ -192,47 +311,50 @@ class waterQualityAdvisory(object):
     if(self.logger):
       self.logger.info("Scraping web pages.")
     results = {}
+    #Get the starting page so we can get the "security" crap.
+    if(self.logger):
+      self.logger.debug("Requesting initial page: %s" % (self.baseUrl))
+    # Open the url
+    headers = {"Content-type": "application/x-www-form-urlencoded",
+               "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.7; rv:24.0) Gecko/20100101 Firefox/24.0"}
+    req = requests.get(self.baseUrl, headers=headers)
+    initDoc = etree.HTML(req.text)
+    #if(self.logger):
+    #  self.logger.debug(req.text)
+    securityParams = self.findSecurityParams(initDoc)
+    #These are the parameters that are used by the dot Net reuqest handler to insure someone isn't
+    #trying to inject crap. The one thing that changes is the DropDownList1, this is the parameter
+    #where the station of interest is set.
+    params = {'DropDownList1' : '',
+      '__EVENTARGUMENT' : '',
+      '__EVENTTARGET' :  'DropDownList1',
+      '__LASTFOCUS' : '',
+      '__EVENTVALIDATION' : securityParams["__EVENTVALIDATION"],
+      '__VIEWSTATE' : securityParams["__VIEWSTATE"]
+    }
+    #Without the trailing '/', the server rejects the request.
+    url = self.baseUrl + "/"
     for station in stationNfoList['features']:
       try:
         stationName = station['properties']['station']
-        #params = {'station' : station['short_name']}
-        params = {'station' : stationName}
-        params = urllib.urlencode(params)
+        params['DropDownList1'] = stationName
         #create the url and the request
-        requestUrl = self.baseUrl + '?' + params
         if(self.logger):
-          self.logger.debug("Requesting page: %s" % (requestUrl))
-        req = urllib2.Request(requestUrl)
-        # Open the url
-        #Set the timeout so we don't hang on the urlopen calls.
-        socket.setdefaulttimeout(30)
-        connection = urllib2.urlopen(req)
-        pageResults = connection.read()
-        
-        """
-        stationPage = "%s%s" % (self.baseUrl, station['short_name'])
-        if(self.logger):
-          self.logger.debug("Requesting page: %s" % (stationPage))
-        pageResults = requests.get(stationPage)
-      except requests.exceptions.RequestException,e:
-        if(self.logger):
-          self.logger.exception(e)
-      """
+          self.logger.debug("Requesting station: %s Base url: %s" % (stationName, url))
+        stationReq = requests.post(url, data=params, headers=headers)
       except Exception,e:
         if(self.logger):
           self.logger.exception(e)
       else:
         try:
-          if(connection.code == 200): 
+          if(stationReq.status_code == 200): 
             #if(self.logger):
-            #  self.logger.debug("Page rcvd: %s" % (pageResults.text))
-            #parsedResult = etree.HTML(pageResults.text)
-            #results = parsedResult.xpath("//table[contains(@id,'GridView1')]")
-            parseResult = docExtract(self.pageDataDict, pageResults)
+            #  self.logger.debug("Page rcvd: %s" % (stationReq.text))
+            parseResult = docExtract(self.pageDataDict, stationReq.text)
             #Loop through and fixup the date to be ISO centric.
-            for resultNfo in parseResult['results']:
-              isoDate = datetime.datetime.strptime(resultNfo['date'], "%m/%d/%Y")
-              resultNfo['date'] = isoDate.strftime("%Y-%m-%d") 
+            #for resultNfo in parseResult['results']:
+            #  isoDate = datetime.datetime.strptime(resultNfo['date'], "%Y-%m-%d")
+            #  resultNfo['date'] = isoDate.strftime("%Y-%m-%d") 
             if(parseResult):
               results[stationName] = parseResult
               
@@ -240,7 +362,7 @@ class waterQualityAdvisory(object):
               self.logger.debug(results[stationName])
           else:
             if(self.logger):
-              self.logger.error("Status Code: %d received, unable to process station data." %(connection.code))
+              self.logger.error("Status Code: %d received, unable to process station data." %(stationReq.status_code))
         except Exception,e:
           if(self.logger):
             self.logger.exception(e) 
@@ -316,6 +438,8 @@ def main():
                     help="INI Configuration file." )
   parser.add_option("-i", "--ImportStationsFile", dest="importStations",
                     help="Stations file to import." )
+  parser.add_option("-t", "--ImportStationsTestResultsFile", dest="importStationsTestResultsFile",
+                    help="Stations file to import." )
   (options, args) = parser.parse_args()
   
   if(options.configFile is None):
@@ -342,7 +466,7 @@ def main():
   try:  
     #Base URL to the page that house an individual stations results. 
     baseUrl = configFile.get('websettings', 'baseAdvisoryPageUrl')
-    
+        
     #Database file.
     #dhecDBName = configFile.get('dhecDatabaseSettings', 'sqliteDB')
     
@@ -351,7 +475,9 @@ def main():
     
     #Filepath to the geoJSON file that contains the station data for all the stations.
     stationGeoJsonFile = configFile.get('stationData', 'stationGeoJsonFile')
-      
+    
+    #The past WQ results.
+    stationWQHistoryFile = configFile.get('stationData', 'stationWQHistoryFile')
   
   except ConfigParser.Error, e:
     if(logger):
@@ -385,13 +511,19 @@ def main():
     """  
     try:      
       advisoryObj = waterQualityAdvisory(baseUrl, True)
+      if(options.importStationsTestResultsFile):
+        advisoryObj.createHistoricalJSON(options.importStationsTestResultsFile, "/Users/danramage/tmp/dhec/monitorstations/historicalWQ.json")
       if(options.importStations):
-        advisoryObj.createStationGeoJSON(options.importStations, stationGeoJsonFile)
+        advisoryObj.createStationGeoJSON(options.importStations, stationGeoJsonFile)      
       else:
         stationDataFile = open(stationGeoJsonFile, "r")
-        stationList = stationJson = geojson.load(stationDataFile)
+        stationList = geojson.load(stationDataFile)
         stationDataFile.close()
-        advisoryObj.processData(stationList, jsonFilepath)
+        #See if we have a historical WQ file, if so let's use that as well.
+        historyWQFile = open(stationWQHistoryFile, "r")
+        historyWQ = geojson.load(historyWQFile)
+        
+        advisoryObj.processData(stationList, jsonFilepath, historyWQ)
     except IOError,e:
       if(logger):
         logger.exception(e)
