@@ -1,5 +1,15 @@
 """
 Revisions
+Date: 2013-10-22
+Author: DWR
+Function: calcAvgWindSpeedAndDir
+Changes: Added function to do a better job of averaging the wind speed and direction. Direction is a special
+case in that its values range from 0-360, so trying to do a straight average will result in incorrect results 
+if the direction is near the inflection.
+
+Function: wqDataMB2::getData, wqDataMB3::getData, wqDataMB4::getData
+Changes: Use the new calcAvgWindSpeedAndDir function.
+ 
 Date: 2013-02-04
 Author: DWR
 Function: wqDataAccess:getAverageForObs
@@ -26,6 +36,7 @@ from pprint import pformat
 from xeniatools.NOAATideData import noaaTideData
 from xeniatools.xenia import dbXenia,dbTypes,qaqcTestFlags
 from xeniatools.xmlConfigFile import xmlConfigFile
+from xeniatools.stats import vectorMagDir
 
 
 
@@ -124,8 +135,8 @@ class mlrPredictionTest(predictionTest):
     highLimit  - Float representing the value, greater than,  which is considered a high prediction.
   """
   def setCategoryLimits(self, lowLimit, highLimit):
-    self.lowCategoryLimit = low
-    self.highCategoryLimit = high
+    self.lowCategoryLimit = lowLimit
+    self.highCategoryLimit = highLimit
   """
   Function: runTest
   Purpose: Uses the data parameter to do the string substitutions then evaluate the formula.
@@ -766,6 +777,94 @@ class wqDataAccess(object):
     return(None)
 
   """
+  Function: calcAvgWindSpeedAndDir
+  Purpose: Wind direction is measured from 0-360 degrees, so around the inflection point trying to do an average can
+  have bad results. For instance 250 degrees and 4 degrees are roughly in the same direction, but doing a straight 
+  average will result in something nowhere near correct. This function takes the speed and direction and converts
+  to a vector.
+  Parameters:
+    platName - String representing the platform name to query
+    startDate the date/time to start the average
+    endDate the date/time to stop the average
+  Returns:
+    A tuple setup to contain [0][0] = the vector speed and [0][1] direction average
+      [1][0] - Scalar speed average [1][1] - vector direction average with unity speed used.
+  """
+  def calcAvgWindSpeedAndDir(self, platName, startDate, endDate):    
+    windComponents = []
+    dirComponents = []
+    vectObj = vectorMagDir();
+    #Get the wind speed and direction so we can correctly average the data.    
+    #Get the sensor ID for the obs we are interested in so we can use it to query the data.
+    windSpdId = self.obsDb.dbConnection.sensorExists('wind_speed', 'm_s-1', platName)
+    windDirId = self.obsDb.dbConnection.sensorExists('wind_from_direction', 'degrees_true', platName)
+    sql = "SELECT m_date ,m_value FROM multi_obs\
+           WHERE sensor_id = %d AND\
+           (m_date >= '%s' AND \
+           m_date < '%s' ) ORDER BY m_date"\
+          %(windSpdId, startDate, endDate)
+    if(self.logger):
+      self.logger.debug("Wind Speed SQL: %s" % (sql))
+
+    windSpdCursor = self.obsDb.executeQuery(sql)
+    sql = "SELECT m_date ,m_value FROM multi_obs\
+           WHERE sensor_id = %d AND\
+           (m_date >= '%s' AND \
+           m_date < '%s' ) ORDER BY m_date"\
+          %(windDirId, startDate, endDate) 
+    if(self.logger):
+      self.logger.debug("Wind Dir SQL: %s" % (sql))
+    windDirCursor = self.obsDb.executeQuery(sql)
+    scalarSpd = None
+    spdCnt = 0
+    for spdRow in windSpdCursor:
+      if(scalarSpd == None):
+        scalarSpd = 0
+      scalarSpd += spdRow['m_value']
+      spdCnt += 1
+      for dirRow in windDirCursor:
+        if(spdRow['m_date'] == dirRow['m_date']):
+          #print("Calculating vector for Speed(%s): %f Dir(%s): %f" % (spdRow['m_date'], spdRow['m_value'], dirRow['m_date'], dirRow['m_value']))
+          #Vector using both speed and direction.
+          windComponents.append(vectObj.calcVector(spdRow['m_value'], dirRow['m_value']))
+          #VEctor with speed as constant(1), and direction.
+          dirComponents.append(vectObj.calcVector(1, dirRow['m_value']))
+          break
+    #Get our average on the east and north components of the wind vector.
+    spdAvg = None  
+    dirAvg = None
+    scalarSpdAvg = None
+    vectorDirAvg = None
+    if(len(windComponents)):
+      eastCompAvg = 0
+      northCompAvg = 0
+      scalarSpdAvg = scalarSpd / spdCnt
+      
+      for vectorTuple in dirComponents:
+        eastCompAvg += vectorTuple[0]
+        northCompAvg += vectorTuple[1]
+      if(eastCompAvg != None and northCompAvg != None):
+        eastCompAvg = eastCompAvg / len(dirComponents)
+        northCompAvg = northCompAvg / len(dirComponents)
+        spdAvg,vectorDirAvg = vectObj.calcMagAndDir(eastCompAvg, northCompAvg)
+        if(self.logger):
+          self.logger.debug("Platform: %s Scalar Speed Avg: %f Vector DirAvg: %f" % (platName,scalarSpdAvg,vectorDirAvg))      
+      
+      for vectorTuple in windComponents:
+        eastCompAvg += vectorTuple[0]
+        northCompAvg += vectorTuple[1]
+        
+      if(eastCompAvg != None and northCompAvg != None):
+        eastCompAvg = eastCompAvg / len(windComponents)
+        northCompAvg = northCompAvg / len(windComponents)
+        #Calculate average with speed and direction components.
+        spdAvg,dirAvg = vectObj.calcMagAndDir(eastCompAvg, northCompAvg)      
+        if(self.logger):
+          self.logger.debug("Platform: %s Vector Speed Avg: %f DirAvg: %f" % (platName,spdAvg,dirAvg))      
+        
+    return(((spdAvg, dirAvg), (scalarSpdAvg, vectorDirAvg)))
+
+  """
   Function: addTest
   Purpose: Adds a prediction test to the list of tests.
   Parameters:
@@ -848,7 +947,7 @@ class wqDataAccess(object):
         #self.addTest(predictionObj)
       else:
         if(self.logger != None):
-          self.logger.error("Object: %s not found in the global namespace, cannot create a test object." %(predictionTestObj))
+          self.logger.error("Object: %s not found in the global namespace, cannot create a test object." %(predictionTstObj))
     
     tag = "//environment/stationTesting/watersheds/watershed[@id=\"%s\"]/stations" % (self.regionName)
     stationList = self.configFile.getListHead(tag)
@@ -1131,14 +1230,23 @@ class wqDataMB2(wqDataAccess):
       data['nos8661070_water_level'] = nos8661070_water_level
     else:
       self.logger.error("Error retrieving water_level from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))      
-
+    
+    #2013-10-22 DWR
+    #Use the new windspeed/direction averaging.
     data['nos8661070_wind_dir'] = self.NO_DATA
+    avgWindComponents = self.calcAvgWindSpeedAndDir('nos.8661070.WL', startDate, stopDate)
+    if(avgWindComponents[1][1] != None):
+      data['nos8661070_wind_dir'] = self.obsDb.dbConnection.compassDirToCardinalPt(avgWindComponents[1][1])
+    else:
+      self.logger.error("Error retrieving nos8661070_wind_dir from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
+    """  
     nos8661070_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'nos.8661070.WL', startDate, stopDate)
     if(nos8661070_wind_dir == None):
       self.logger.error("Error retrieving nos8661070_wind_dir from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
     elif(nos8661070_wind_dir != self.NO_DATA):        
       nos8661070_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(nos8661070_wind_dir)
       data['nos8661070_wind_dir'] = nos8661070_compass_dir
+    """
     
     self.logger.debug(pformat(data))
     
@@ -1179,7 +1287,19 @@ class wqDataMB3(wqDataAccess):
     else:
       self.logger.error("Error retrieving Radar Preceeding Dry Day Cnt. Error: %s" %(self.nexradDb.getErrorInfo()))
         
-    #Get the salinity from SUN2
+    #Get the wind speed/direction from SUN2
+    #2013-10-22 DWR
+    #Use the new windspeed/direction averaging.
+    data['sun2_wind_speed'] = self.NO_DATA
+    data['sun2_wind_dir'] = self.NO_DATA
+    avgWindComponents = self.calcAvgWindSpeedAndDir('carocoops.SUN2.buoy', startDate, stopDate)
+    if(avgWindComponents[1][0] != None and avgWindComponents[1][1] != None):
+      data['sun2_wind_speed'] = avgWindComponents[1][0] * 1.9438444924406
+      data['sun2_wind_dir'] = self.obsDb.dbConnection.compassDirToCardinalPt(avgWindComponents[1][1])
+    else:
+      self.logger.error("Error retrieving wind speed/direciton from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
+    
+    """
     data['sun2_wind_speed'] = self.NO_DATA
     sun2_wind_speed = self.getAverageForObs('wind_speed', 'm_s-1', 'carocoops.SUN2.buoy', startDate, stopDate)
     if(sun2_wind_speed != None and sun2_wind_speed != self.NO_DATA):
@@ -1189,7 +1309,6 @@ class wqDataMB3(wqDataAccess):
     else:
       self.logger.error("Error retrieving sun2_wind_speed from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
 
-    #Get the salinity from SUN2
     data['sun2_wind_dir'] = self.NO_DATA
     sun2_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'carocoops.SUN2.buoy', startDate, stopDate)
     if(sun2_wind_dir == None):
@@ -1197,7 +1316,7 @@ class wqDataMB3(wqDataAccess):
     elif(sun2_wind_dir != self.NO_DATA):
       sun2_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(sun2_wind_dir)
       data['sun2_wind_dir'] = sun2_compass_dir
-
+    """
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
@@ -1245,7 +1364,17 @@ class wqDataMB4(wqDataAccess):
       data['sun2_water_temp'] = sun2_water_temp
     else:
       self.logger.error("Error retrieving sun2_water_temp from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
+    
+    #2013-10-22 DWR
+    #Use the new wind speed/direction averaging.
+    data['sun2_wind_dir'] = self.NO_DATA
+    avgWindComponents = self.calcAvgWindSpeedAndDir('carocoops.SUN2.buoy', startDate, stopDate)
+    if(avgWindComponents[1][1] != None):
+      data['sun2_wind_dir'] = self.obsDb.dbConnection.compassDirToCardinalPt(avgWindComponents[1][1])
+    else:
+      self.logger.error("Error retrieving wind speed/direction from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
 
+    """
     data['sun2_wind_dir'] = self.NO_DATA
     sun2_wind_dir = self.getAverageForObs('wind_from_direction', 'degrees_true', 'carocoops.SUN2.buoy', startDate, stopDate)
     if(sun2_wind_dir == None):
@@ -1253,14 +1382,14 @@ class wqDataMB4(wqDataAccess):
     elif(sun2_wind_dir != self.NO_DATA):
       sun2_compass_dir = self.obsDb.dbConnection.compassDirToCardinalPt(sun2_wind_dir)
       data['sun2_wind_dir'] = sun2_compass_dir
-
+    """
     data['sun2_salinity'] = self.NO_DATA
     sun2_salinity = self.getAverageForObs('salinity', 'psu', 'carocoops.SUN2.buoy', startDate, stopDate)
     if(sun2_salinity != None):
       data['sun2_salinity'] = sun2_salinity
     else:
       self.logger.error("Error retrieving salinity from SUN2. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
-
+    
     #Get NOS water level
     data['nos8661070_water_level'] = self.NO_DATA
     nos8661070_water_level = self.getAverageForObs('water_level', 'm', 'nos.8661070.WL', startDate, stopDate)
@@ -1614,8 +1743,8 @@ class testSuite(object):
   
 if __name__ == '__main__':
   try:
-    import psyco
-    psyco.full()
+    #import psyco
+    #psyco.full()
         
     parser = optparse.OptionParser()
     parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
