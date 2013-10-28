@@ -1,13 +1,10 @@
 #summary Notes on getting the python netcdf4 lib working to use data from Thredds Servers.
 
-= Introduction =
-
-Add your content here.
 
 
-= Details =
+= Libs needed =
 
-Add your content here.  Format your content with:
-  * Text in *bold* or _italic_
-  * Headings, paragraphs, and lists
-  * Automatic links to other wiki pages
+  * HDF5
+
+  * ZLib
+  *netcdf4
