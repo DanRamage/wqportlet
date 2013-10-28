@@ -1,4 +1,4 @@
-#summary One-sentence summary of this page.
+#summary Notes on getting the python netcdf4 lib working to use data from Thredds Servers.
 
 = Introduction =
 
