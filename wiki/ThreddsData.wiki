@@ -5,6 +5,16 @@
 = Libs needed =
 
   * HDF5
-
+  Download the source code from [http://www.hdfgroup.org/HDF5/release/obtain5.html here]
+  Since I installed in a python virtual environment, I used that environment to also install the libraries. My configure statement looks like this:
+{{{
+./configure --prefix=/usr2/virtualenvs/pyenv2.7/ --with-zlib=/usr2/virtualenvs/pyenv2.7 --enable-hl --enable-shared
+}}}
   * ZLib
+{{{
+./configure --prefix=/usr2/virtualenvs/pyenv2.7/ 
+}}}
   *netcdf4
+{{{
+CPPFLAGS=-I/usr2/virtualenvs/pyenv2.7/include LDFLAGS=-L/usr2/virtualenvs/pyenv2.7/lib ./configure --prefix=/usr2/virtualenvs/pyenv2.7 --enable-netcdf-4  --enable-dap
+}}}
