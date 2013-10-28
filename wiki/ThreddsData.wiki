@@ -18,3 +18,14 @@
 {{{
 CPPFLAGS=-I/usr2/virtualenvs/pyenv2.7/include LDFLAGS=-L/usr2/virtualenvs/pyenv2.7/lib ./configure --prefix=/usr2/virtualenvs/pyenv2.7 --enable-netcdf-4  --enable-dap
 }}}
+  * netCDF4 Python binding
+  In .bashrc, add the following exports:
+  {{{
+export HDF5_DIR=/usr2/virtualenvs/pyenv2.7
+export NETCDF4_DIR=/usr2/virtualenvs/pyenv2.7
+export HDF5_includedir=/usr2/virtualenvs/pyenv2.7/include
+export netCDF4_includedir=/usr2/virtualenvs/pyenv2.7/include
+export HDF5_libdir=/usr2/virtualenvs/pyenv2.7/lib
+export netCDF4_libdir=/usr2/virtualenvs/pyenv2.7/lib
+  }}}
+  When building, if you use a virtual environment, before you run python setup.py install, make sure to activate the environment(source <path-to-virtualenv/bin/activate>
