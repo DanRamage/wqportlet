@@ -13,10 +13,10 @@ import os
 import sys
 import time
 import datetime
-from datetime import tzinfo
-from pytz import timezone
+#from datetime import tzinfo
+#from pytz import timezone
 import logging
-import logging.handlers
+#import logging.handlers
 from pysqlite2 import dbapi2 as sqlite3
 from xeniatools.xenia import xeniaSQLite
 from xeniatools.astronomicalCalcs import moon
@@ -43,7 +43,7 @@ class dhecDB(xeniaSQLite):
     self.lastErrorMsg = None
     if(xeniaSQLite.connect(self, dbName) == False):
       if(self.logger != None):
-        self.logger.error(self.db.lastErrorMsg)
+        self.logger.error(self.lastErrorMsg)
       sys.exit(-1)
   def __del__(self):
     self.DB.close()
@@ -1346,5 +1346,119 @@ class dhecDB(xeniaSQLite):
         return(cardinalPts[cardPt])
     return(None)              
 
+  """
+  Function: backupData
+  Purpose: Rollover precipitation data in the live database older than 30 days into the backup database.
+  """    
+  def backupData(self, dbBackupFile, dbBackupSQLSchemaFile):
+    self.logger.info("Beginning data backup/rollover.")
+    
+    curYear = time.strftime('%Y', time.localtime())
+    backupDB = None
+    filePath = "%s%s/" % (dbBackupFile, curYear)
+    backupFilename = "%s%s-dhec.db" % (filePath, curYear)
+    ################################################################################
+    #Test to see if the database exists.
+    if(not os.path.isfile(backupFilename)):    
+      #Check to see if the directory exists
+      if(not os.path.exists(filePath)):
+        os.mkdir(filePath)
+        self.logger.info("Directory: %s does not exist, creating." % (filePath))
+      
+      if(dbBackupSQLSchemaFile == None):  
+        self.logger.info("File: %s does not exist, cannot continue." % (backupFilename))
+        return
+      #We've got a SQL file to create the schema with.
+      else:
+        backupDB = dhecDB(backupFilename, "dhec_logger")
+        backupDB.DB.close()
+        shellCmd = "sqlite3 \"%s\" < \"%s\""%(backupFilename,dbBackupSQLSchemaFile)
+        ret = os.system(shellCmd)
+        self.logger.debug("Created database: %s with schema file: %s" %(backupFilename,dbBackupSQLSchemaFile))
+    else:
+      backupDB = dhecDB(backupFilename, "dhec_logger")
+      self.logger.info("Connecting to database: %s" % (backupFilename))
+
+    ################################################################################
+      
+    ################################################################################
+    #On a platform by platform basis, get all data that is not in the current month.    
+    dbCursor = self.getPlatforms()
+    #Cutoff date, we want to keep last 30 days.      
+    cutoffDate = time.strftime("%Y-%m-%dT00:00:00", time.localtime(time.time() - (30 * 24 * 60 * 60)))
+    #for platformHandle in platList:
+    for row in dbCursor: 
+      platformHandle = row['platform_handle']   
+      if(self.logger):
+        self.logger.info("Processing multi_obs table data for platform: %s" % (platformHandle))
+      sql = "SELECT m_date,m_lat, m_lon,m_z\
+                ,multi_obs.platform_handle \
+                ,obs_type.standard_name \
+                ,uom_type.standard_name as uom \
+                ,multi_obs.m_type_id \
+                ,m_value \
+                ,qc_level \
+                ,sensor.row_id as sensor_id\
+                ,sensor.s_order \
+              FROM multi_obs \
+                left join sensor on sensor.row_id=multi_obs.sensor_id \
+                left join m_type on m_type.row_id=multi_obs.m_type_id \
+                left join m_scalar_type on m_scalar_type.row_id=m_type.m_scalar_type_id \
+                left join obs_type on obs_type.row_id=m_scalar_type.obs_type_id \
+                left join uom_type on uom_type.row_id=m_scalar_type.uom_type_id \
+                WHERE m_date < '%s' AND\
+                multi_obs.platform_handle = '%s'\
+                ORDER BY m_date DESC" \
+                % (cutoffDate,platformHandle)        
+      resultsCursor = self.executeQuery(sql)
+      rowCnt = 0
+      if(resultsCursor != None):
+        for item in resultsCursor:
+          obsName = ''
+          uom = ''
+          mVals = []
+          mVals.append(float(item['m_value']))
+          z = item['m_z']
+          if(z == None):
+            z = 0
+          sOrder = item['s_order']
+          if(sOrder == None):
+            sOrder = 1
+          if(backupDB.addMeasurement(item['standard_name'], 
+                                     item['uom'],
+                                     platformHandle,
+                                     item['m_date'],
+                                     item['m_lat'], item['m_lon'],
+                                     z,
+                                     mVals,
+                                     sOrder,
+                                     False) != True):
+            if(self.logger):
+              self.logger.critical( "%s Function: %s Line: %d File: %s"\
+                                 %(backupDB.lastErrorMsg,backupDB.lastErrorFunc, backupDB.lastErrorLineNo, backupDB.lastErrorFile) )
+            
+          
+          rowCnt += 1               
+        if(not backupDB.commit()):
+          self.logger.error(backupDB.lastErrorMsg)
+          sys.exit(- 1)
+        self.logger.info("Successfully processed and committed: %d rows into backup." % (rowCnt))
+        resultsCursor.close()
+        
+        #Now we delete the records from the source DB.
+        self.logger.info("Deleting backed up records from source database.")
+        sql = "DELETE FROM multi_obs WHERE m_date < '%s' and platform_handle='%s'" % (cutoffDate, platformHandle)
+        resultsCursor = self.executeQuery(sql)
+        if(resultsCursor != None):
+          if(not self.commit()):
+            self.logger.error(self.lastErrorMsg)
+            sys.exit(- 1)
+        else:
+          self.logger.error(self.lastErrorMsg)
+          sys.exit(- 1)
+        resultsCursor.close()
+    dbCursor.close()
+   
+    self.logger.info("Finished data backup/rollover.")
 
   
