@@ -265,7 +265,8 @@ class outputKMLResults(outputResults):
     outputResults.__init__(self, xmlConfigFile, logger)
 
   def createOutput(self, testObjects, beginDate, endDate, testRunDate):
-    from pykml import kml
+    #from pykml import kml
+    from pykml.factory import KML_ElementMaker as kml
     tag = "//environment/stationTesting/results/outputResultList/outputType[@id=\"kml\"]/kmlFilePath"
     kmlFilepath = self.configFile.getEntry(tag)
 
@@ -463,8 +464,11 @@ Data used for station tests:
               if(key != "station" and key != "station_coefficient"):
                 val = tstObj.data[key]
                 varInfo = self.varMapping[key]                
-                if(val == -9999):
+                if(val == -9999 or val == None):
                   val = "Data unavailable."
+                  if(val == None):
+                    if(self.logger):
+                      self.logger.error("Station: %s Variable: %s was not calculated" % (station,key))
                 if(type(val) != str):
                   dataUsed += "%s: %f\n" % (varInfo['displayName'], val)
                 else:
@@ -824,7 +828,8 @@ class wqDataAccess(object):
       spdCnt += 1
       for dirRow in windDirCursor:
         if(spdRow['m_date'] == dirRow['m_date']):
-          #print("Calculating vector for Speed(%s): %f Dir(%s): %f" % (spdRow['m_date'], spdRow['m_value'], dirRow['m_date'], dirRow['m_value']))
+          if(self.logger):
+            self.logger.debug("Calculating vector for Speed(%s): %f Dir(%s): %f" % (spdRow['m_date'], spdRow['m_value'], dirRow['m_date'], dirRow['m_value']))
           #Vector using both speed and direction.
           windComponents.append(vectObj.calcVector(spdRow['m_value'], dirRow['m_value']))
           #VEctor with speed as constant(1), and direction.
@@ -1236,6 +1241,8 @@ class wqDataMB2(wqDataAccess):
     data['nos8661070_wind_dir'] = self.NO_DATA
     avgWindComponents = self.calcAvgWindSpeedAndDir('nos.8661070.WL', startDate, stopDate)
     if(avgWindComponents[1][1] != None):
+      if(self.logger):
+        self.logger.debug("Avg wind dir: %f" % (avgWindComponents[1][1]))
       data['nos8661070_wind_dir'] = self.obsDb.dbConnection.compassDirToCardinalPt(avgWindComponents[1][1])
     else:
       self.logger.error("Error retrieving nos8661070_wind_dir from nos8661070. Error: %s" %(self.obsDb.dbConnection.getErrorInfo()))
