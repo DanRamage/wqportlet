@@ -1,5 +1,13 @@
 """
 Revisions:
+Date: 2013-10-29
+Function: getLatestHourXMRGData
+Changes: Fixed up calling of cleanPrecipRadar, was calling with incorrect variabled.
+
+Date: 2012-10-29
+Function: dhecXMRGProcessing.cleanUp
+Changes: Added function so child classes can override and better control what files get cleaned up.
+
 Date: 2011-07-28
 Function: dhecXMRGProcessing.vacuumDB
 Changes: Added function to vacuum database. Previously we were using the rain gauge processing class, however since
@@ -29,7 +37,7 @@ if(sys.platform == "win32"):
 from xmrgFile import xmrgFile,hrapCoord,LatLong
 from processXMRGFile import processXMRGData
 from dhecDB import dhecDB
-from dhecRainGaugeProcessing import processDHECRainGauges
+#from dhecRainGaugeProcessing import processDHECRainGauges
 from xeniatools import getRemoteFiles
 
 
@@ -208,7 +216,10 @@ class dhecXMRGProcessing(processXMRGData):
       
       #Clean up data older than xmrgKeepLastNDays
       olderThan = curDay - datetime.timedelta(days=self.xmrgKeepLastNDays)
-      db.cleanPrecipRadar(olderThan.strftime("%Y-%m-%dT%H:%M:%S"))
+      #2013-10-29
+      #Fix up bug in calling function.
+      db.cleanPrecipRadar(olderThan)
+      #db.cleanPrecipRadar(olderThan.strftime(nowTime))
       #Current time minus N days worth of seconds.
       #timeNHoursAgo = time.time() - ( self.xmrgKeepLastNDays * 24 * 60 * 60 ) 
       #currentDateTime = time.strftime( "%Y-%m-%dT%H:%M:%S", time.localtime(timeNHoursAgo))
@@ -290,6 +301,12 @@ class dhecXMRGProcessing(processXMRGData):
         return(False)
     return(True)
   
+  """
+  def cleanUp(self, fileName):
+    xmrg = xmrgFile( self.configSettings.loggerName )
+    xmrg.openFile( fileName )
+    xmrg.cleanUp(self.deleteSourceFile, self.deleteCompressedSourceFile)
+  """
   def getCollectionDateFromFilename(self, fileName):
     #Parse the filename to get the data time.
     (directory,filetime) = os.path.split( fileName )
@@ -324,7 +341,8 @@ class dhecXMRGProcessing(processXMRGData):
   def writeShapefile(self, fileName, minLatLong=None, maxLatLong=None):
     import osgeo.ogr
     import osgeo.osr
-  
+    #DWR 2012-10-29  
+    retVal = True
     xmrg = xmrgFile( self.configSettings.loggerName )
     xmrg.openFile( fileName )
     if( xmrg.readFileHeader() ):     
@@ -484,13 +502,18 @@ class dhecXMRGProcessing(processXMRGData):
           self.logger.exception(E)
         else:
           print(traceback.print_exc())
-        return(False)
+        #DWR 2012-10-29            
+        retVal = False
       
+      #DWR 2012-10-29
+      #Move the deletion of the file to a member function so child classes can control.
+      xmrg.xmrgFile.close()
       xmrg.cleanUp(self.deleteSourceFile,self.deleteCompressedSourceFile)
-      return(True)
+      return(retVal)
 
   def writeLatLonDB(self, fileName, dbFile, minLatLong=None, maxLatLong=None,db=None):
-
+    #DWR 2012-10-29  
+    retVal = True
     if(self.logger != None):
       self.logger.debug("writeLatLonDB File: %s BBOX: %f,%f %f,%f"\
                         %(fileName,minLatLong.latitude,minLatLong.longitude,maxLatLong.latitude,maxLatLong.longitude))
@@ -606,10 +629,14 @@ class dhecXMRGProcessing(processXMRGData):
           self.logger.exception(E)
         else:
           print(traceback.print_exc())
-        return(False)
+        #DWR 2012-10-29  
+        retVal = False
       
+      #DWR 2012-10-29
+      #Move the deletion of the file to a member function so child classes can control.
+      xmrg.xmrgFile.close()
       xmrg.cleanUp(self.deleteSourceFile,self.deleteCompressedSourceFile)
-      return(True)
+      return(retVal)
         
   def calculateWeightedAverages(self,startDate,endDate,dbConnection,addSensor=False, rainGaugeList=None):
     try:
