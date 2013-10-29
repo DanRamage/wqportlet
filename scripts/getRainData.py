@@ -1,5 +1,10 @@
 """
 Revisions
+Author: DWR
+Date: 2012-06-21
+Function: archiveXMRGFiles
+Changes: Added function to archive the XMRG files to keep the main download directory clean.
+
 Date: 2011-07-27
 Function: vacuum
 Changes: Use the dhecXMRGProcessing object to vacuum the database instead of the processDHECRainGauges object.
@@ -8,16 +13,16 @@ Changes: Use the dhecXMRGProcessing object to vacuum the database instead of the
 import sys
 import optparse
 import time
+import datetime
+import logging.config
 #sys.path.append("C:\Documents and Settings\dramage\workspace\BeachAdvisory") 
 from dhecRainGaugeProcessing import dhecDB
-from dhecRainGaugeProcessing import rainGaugeData
-from dhecRainGaugeProcessing import processDHECRainGauges 
-from dhecRainGaugeProcessing import dhecConfigSettings
 from dhecXMRGProcessing import dhecXMRGProcessing
+from xmrgFile import xmrgCleanup
+from dhecThreddsData import dhecThreddsData
+from xeniatools.xmlConfigFile import xmlConfigFile
 
-
-
-
+"""
 def getRainGaugeData(configFile):
   dhecData = processDHECRainGauges(configFile)
 #  dhecData.deleteRainGaugeDataFiles()
@@ -27,11 +32,16 @@ def getRainGaugeData(configFile):
   #dhecData.checkDataFlow()
   #Create KML output.
   dhecData.writeKMLFile()
-
+"""
 def getXMRGData(configFile):
   xmrgData = dhecXMRGProcessing(configFile)
   xmrgData.getLatestHourXMRGData()
 
+def getModelData(iniFile):
+  dhecThredds = dhecThreddsData(iniFile)
+  dhecThredds.processData()
+  return
+  
 def createXMRGSummaryFiles(configFile):
   
   try:
@@ -167,8 +177,8 @@ def createXMRGSummaryFiles(configFile):
   except Exception, e:
     if(db.logger != None):
       db.logger.critical(str(e) + ' Terminating script.', exc_info=1)
-    else:
-      print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
+    #else:
+    #  print("ErrMsg: %s SQL: '%s'" % (e.args[0], sql))      
     sys.exit(-1)
     
   return
@@ -178,15 +188,28 @@ def vacuum(configFile):
   dhecData.vacuumDB()
 
 def backupData(configFile):
-  dhecData = processDHECRainGauges(configFile)
-  dhecData.backupData()
-
+  
+  dbFile = configSettings.getEntry('//environment/database/db/name')
+  db = dhecDB(dbFile, "dhec_testing_logger")
+  backupDb = configSettings.getEntry('//environment/database/db/backup/filePath')
+  dbSchema = configSettings.getEntry('//environment/database/db/backup/sqlSchemaFile')
+  db.backupData(backupDb, dbSchema)
+  
+def archiveXMRGFiles(configFile):
+  dhecData = dhecXMRGProcessing(configFile)
+  archiveDir = dhecData.configSettings.getEntry('//xmrgData/archiveFilesDir')
+  if(archiveDir):
+    cleanUp = xmrgCleanup(dhecData.configSettings.xmrgDLDir, archiveDir)
+    cleanUp.organizeFilesIntoDirectories(datetime.datetime.utcnow())
+  
 if __name__ == '__main__':
   parser = optparse.OptionParser()
   parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
                     help="XML Configuration file." )
-  parser.add_option("-r", "--GetRainGaugeData", dest="getRainGaugeData", 
-                    action= 'store_true', help="Process the rain gauge data." )
+  parser.add_option("-t", "--GetModelData", dest="getModelData", 
+                    action= 'store_true', help="Get the model data from the Thredds server" )
+  parser.add_option("-m", "--ModelIniFile", dest="modelIniFile", 
+                    help="INI File for processing the model data." )
   parser.add_option("-x", "--GetXMRGData", dest="getXMRGData", 
                     action= 'store_true', help="Process the XMRG Radar data." )  
   parser.add_option("-v", "--Vacuum", dest="vacuum", 
@@ -195,23 +218,33 @@ if __name__ == '__main__':
                     help="Used to roll precipitation data out of the working database and into a backup database." )
   parser.add_option("-f", "--CreateXMRGSummaryFiles", dest="createXMRGSummaryFiles", action= 'store_true', 
                     help="Specifies creation of the XMRG summary files for DHEC excel sheets." )
+  parser.add_option("-a", "--ArchiveXMRGFiles", dest="archiveXMRG", action= 'store_true', 
+                    help="If true, then files in the XMRG download directory are moved to the archival directory." )
   (options, args) = parser.parse_args()
   if( options.xmlConfigFile == None ):
     parser.print_usage()
     parser.print_help()
     sys.exit(-1)
+
+  configSettings = xmlConfigFile(options.xmlConfigFile)
+
+  logFile = configSettings.getEntry('//environment/logging/logConfigFile')
+  logging.config.fileConfig(logFile)
+  logger = logging.getLogger("dhec_processing_logger")
+  logger.info("Session started")
   
   if( options.vacuum ):
     vacuum(options.xmlConfigFile )    
   else:
-    if( options.getRainGaugeData ):
-      getRainGaugeData( options.xmlConfigFile )
     if( options.getXMRGData ):
-      getXMRGData( options.xmlConfigFile )
+      getXMRGData(options.xmlConfigFile)
+    if(options.getModelData):
+      getModelData(options.modelIniFile)
     if( options.backupPrecip ):
       backupData( options.xmlConfigFile )
     if(options.createXMRGSummaryFiles):
       createXMRGSummaryFiles(options.xmlConfigFile)
-    else:
-      print( "No options specified. No actions taken.\n" )
+    if(options.archiveXMRG):
+      archiveXMRGFiles(options.xmlConfigFile)
 
+  logger.info("Session stopped")
