@@ -1,5 +1,10 @@
 """
 Revisions
+Date: 2013-11-21
+Author: DWR
+Function: calcAvgWindSpeedAndDir
+Changes: Reset the east/north avg variables to 0 before calcing the vector components averages. 
+
 Date: 2013-10-22
 Author: DWR
 Function: calcAvgWindSpeedAndDir
@@ -840,7 +845,9 @@ class wqDataAccess(object):
     dirAvg = None
     scalarSpdAvg = None
     vectorDirAvg = None
-    if(len(windComponents)):
+
+    #If we have the direction only components, this is unity speed with wind direction, calc the averages.
+    if(len(dirComponents)):
       eastCompAvg = 0
       northCompAvg = 0
       scalarSpdAvg = scalarSpd / spdCnt
@@ -848,24 +855,29 @@ class wqDataAccess(object):
       for vectorTuple in dirComponents:
         eastCompAvg += vectorTuple[0]
         northCompAvg += vectorTuple[1]
-      if(eastCompAvg != None and northCompAvg != None):
-        eastCompAvg = eastCompAvg / len(dirComponents)
-        northCompAvg = northCompAvg / len(dirComponents)
-        spdAvg,vectorDirAvg = vectObj.calcMagAndDir(eastCompAvg, northCompAvg)
-        if(self.logger):
-          self.logger.debug("Platform: %s Scalar Speed Avg: %f Vector DirAvg: %f" % (platName,scalarSpdAvg,vectorDirAvg))      
-      
+
+      eastCompAvg = eastCompAvg / len(dirComponents)
+      northCompAvg = northCompAvg / len(dirComponents)
+      spdAvg,vectorDirAvg = vectObj.calcMagAndDir(eastCompAvg, northCompAvg)
+      if(self.logger):
+        self.logger.debug("Platform: %s Scalar Speed Avg: %f Vector Dir Avg: %f" % (platName,scalarSpdAvg,vectorDirAvg))      
+    
+    #2013-11-21 DWR Add check to verify we have components. Also reset the eastCompAvg and northCompAvg to 0
+    #before doing calcs.  
+    #If we have speed and direction vectors, calc the averages.
+    if(len(windComponents)):
+      eastCompAvg = 0
+      northCompAvg = 0
       for vectorTuple in windComponents:
         eastCompAvg += vectorTuple[0]
         northCompAvg += vectorTuple[1]
         
-      if(eastCompAvg != None and northCompAvg != None):
-        eastCompAvg = eastCompAvg / len(windComponents)
-        northCompAvg = northCompAvg / len(windComponents)
-        #Calculate average with speed and direction components.
-        spdAvg,dirAvg = vectObj.calcMagAndDir(eastCompAvg, northCompAvg)      
-        if(self.logger):
-          self.logger.debug("Platform: %s Vector Speed Avg: %f DirAvg: %f" % (platName,spdAvg,dirAvg))      
+      eastCompAvg = eastCompAvg / len(windComponents)
+      northCompAvg = northCompAvg / len(windComponents)
+      #Calculate average with speed and direction components.
+      spdAvg,dirAvg = vectObj.calcMagAndDir(eastCompAvg, northCompAvg)      
+      if(self.logger):
+        self.logger.debug("Platform: %s Vector Speed Avg: %f Vector Dir Avg: %f" % (platName,spdAvg,dirAvg))      
         
     return(((spdAvg, dirAvg), (scalarSpdAvg, vectorDirAvg)))
 
