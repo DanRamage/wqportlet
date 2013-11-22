@@ -14,7 +14,7 @@
 {{{
 ./configure --prefix=/usr2/virtualenvs/pyenv2.7/ 
 }}}
-  *netcdf4
+  * netcdf4
 {{{
 CPPFLAGS=-I/usr2/virtualenvs/pyenv2.7/include LDFLAGS=-L/usr2/virtualenvs/pyenv2.7/lib ./configure --prefix=/usr2/virtualenvs/pyenv2.7 --enable-netcdf-4  --enable-dap
 }}}
