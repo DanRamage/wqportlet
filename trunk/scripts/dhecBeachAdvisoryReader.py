@@ -1,5 +1,9 @@
 """
 Revisions
+Date: 2014-01-31
+Function: __outputGeoJson
+Changes: If there are no results for the beach advisories, add a message property to give
+  the user a bit of info.
 Date: 2013-07-09
 Function: waterQualityAdvisor:processData
 Changes: The web page we were scraping to get the actual sample data has been taken down. Added code to handle the
@@ -372,6 +376,11 @@ class waterQualityAdvisory(object):
       properties['len'] = stationData['properties']['len']
       properties['sign'] = stationData['properties']['sign']      
       properties['test'] = {'beachadvisories' : resultsData[stationName]['results']}
+      #DWR 2014-01-31
+      #If we don't have any results, add a message to give a reason to the user.
+      #Most likely there is no data because DHEC has pulled the data down for the year.
+      if(len(resultsData[stationName]['results']) == 0):
+        properties['message'] = "Bacteria sample data is currently unavailable."
       geometry = stationData['geometry']      
       feature = geojson.Feature(id=stationName, geometry=geometry, properties=properties)
       features.append(feature)
