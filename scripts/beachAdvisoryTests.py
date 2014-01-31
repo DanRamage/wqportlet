@@ -1,5 +1,11 @@
 """
 Revisions
+Date: 2014-01-31
+Author: DWR
+Function: outputJSONResults::createOutput
+Changes: Added a message property to the station feature if it has a NO_TEST. If all station
+  results are NO_TEST, added a root level message property.
+
 Date: 2013-11-21
 Author: DWR
 Function: calcAvgWindSpeedAndDir
@@ -543,6 +549,8 @@ class outputJSONResults(outputResults):
         nexradDBSettings = self.configFile.getDatabaseSettingsEx('//environment/stationTesting/database/nexradDatabase/')
         nexradDB = dhecDB(nexradDBSettings['dbName'],"dhec_testing_logger")
         features = []
+        noTestCount = 0
+        stationCnt = 0
         for wqObj in testObjects:
           stationKeys = wqObj.results.keys()
           stationKeys.sort()
@@ -603,6 +611,12 @@ class outputJSONResults(outputResults):
             property['station'] = station
             property['region'] = wqObj.regionName
             property['ensemble'] = predictionLevels(tstObj.ensemblePrediction).__str__()
+            #DWR 2014-01-31
+            #ADd a message field when we have a NO_TEST to allow a more descriptive message
+            #to let users know why no test.
+            if(tstObj.ensemblePrediction == predictionLevels.NO_TEST):
+              property['message'] = "One or more data sources unavailable to create prediction."
+              noTestCount += 1
             property['desc'] = stationDesc
               
             #Get any specific computed variables from the test object. This is not the data that
@@ -618,13 +632,21 @@ class outputJSONResults(outputResults):
             
             feature['properties'] = property
             features.append(feature)
-        
+
+            stationCnt += 1
+
+
+
         stationData = {}
         stationData['type'] = "FeatureCollection";
         stationData['features'] = features
             
         resultsInfo['stationData'] = stationData
-            
+        #DWR 2014-01-31
+        #If all the tests are NO_TEST, we add a global message.
+        if(noTestCount == stationCnt):
+          resultsInfo['message'] = "One or more data sources unavailable to create predictions."
+
       jsonPlatformFile = open(jsonFilepath, "w")
       jsonPlatformFile.write(json.dumps(resultsInfo, sort_keys=True))
       jsonPlatformFile.close()
