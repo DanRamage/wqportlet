@@ -1,5 +1,9 @@
 """
 Revisions
+Date: 2014-07-11
+Function: __scrapeResults
+Changes: Verify securityParams object is valid before attempting to use it.
+
 Date: 2013-07-09
 Function: waterQualityAdvisor:processData
 Changes: The web page we were scraping to get the actual sample data has been taken down. Added code to handle the
@@ -295,9 +299,9 @@ class waterQualityAdvisory(object):
                   '__EVENTVALIDATION' : str(htmlDoc.xpath("//input[@id='__EVENTVALIDATION' ] /@value")[0])
                 }
     except Exception,e:
-      if(self.logger):
+      if self.logger :
         self.logger.exception(e)
-    return(params)  
+    return params
   """
   Function: __scrapeResults
   Purpose: This is the function that loops through the station list, queries the webpage for the results creating the individual
@@ -318,55 +322,63 @@ class waterQualityAdvisory(object):
     headers = {"Content-type": "application/x-www-form-urlencoded",
                "User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.7; rv:24.0) Gecko/20100101 Firefox/24.0"}
     req = requests.get(self.baseUrl, headers=headers)
-    initDoc = etree.HTML(req.text)
-    #if(self.logger):
-    #  self.logger.debug(req.text)
-    securityParams = self.findSecurityParams(initDoc)
-    #These are the parameters that are used by the dot Net reuqest handler to insure someone isn't
-    #trying to inject crap. The one thing that changes is the DropDownList1, this is the parameter
-    #where the station of interest is set.
-    params = {'DropDownList1' : '',
-      '__EVENTARGUMENT' : '',
-      '__EVENTTARGET' :  'DropDownList1',
-      '__LASTFOCUS' : '',
-      '__EVENTVALIDATION' : securityParams["__EVENTVALIDATION"],
-      '__VIEWSTATE' : securityParams["__VIEWSTATE"]
-    }
-    #Without the trailing '/', the server rejects the request.
-    url = self.baseUrl + "/"
-    for station in stationNfoList['features']:
-      try:
-        stationName = station['properties']['station']
-        params['DropDownList1'] = stationName
-        #create the url and the request
-        if(self.logger):
-          self.logger.debug("Requesting station: %s Base url: %s" % (stationName, url))
-        stationReq = requests.post(url, data=params, headers=headers)
-      except Exception,e:
-        if(self.logger):
-          self.logger.exception(e)
-      else:
-        try:
-          if(stationReq.status_code == 200): 
-            #if(self.logger):
-            #  self.logger.debug("Page rcvd: %s" % (stationReq.text))
-            parseResult = docExtract(self.pageDataDict, stationReq.text)
-            #Loop through and fixup the date to be ISO centric.
-            #for resultNfo in parseResult['results']:
-            #  isoDate = datetime.datetime.strptime(resultNfo['date'], "%Y-%m-%d")
-            #  resultNfo['date'] = isoDate.strftime("%Y-%m-%d") 
-            if(parseResult):
-              results[stationName] = parseResult
-              
+    if(req.status_code == 200):
+      initDoc = etree.HTML(req.text)
+      #if(self.logger):
+      #  self.logger.debug(req.text)
+      securityParams = self.findSecurityParams(initDoc)
+      if self.logger:
+        self.logger.debug("security params: %s" % (securityParams))
+      #These are the parameters that are used by the dot Net reuqest handler to insure someone isn't
+      #trying to inject crap. The one thing that changes is the DropDownList1, this is the parameter
+      #where the station of interest is set.
+      #2014-07-11 DWR
+      #Check we have valid object before attempting to use.
+      if securityParams is not None:
+        params = {'DropDownList1' : '',
+          '__EVENTARGUMENT' : '',
+          '__EVENTTARGET' :  'DropDownList1',
+          '__LASTFOCUS' : '',
+          '__EVENTVALIDATION' : securityParams["__EVENTVALIDATION"],
+          '__VIEWSTATE' : securityParams["__VIEWSTATE"]
+        }
+        #Without the trailing '/', the server rejects the request.
+        url = self.baseUrl + "/"
+        for station in stationNfoList['features']:
+          try:
+            stationName = station['properties']['station']
+            params['DropDownList1'] = stationName
+            #create the url and the request
             if(self.logger):
-              self.logger.debug(results[stationName])
+              self.logger.debug("Requesting station: %s Base url: %s" % (stationName, url))
+            stationReq = requests.post(url, data=params, headers=headers)
+          except Exception,e:
+            if(self.logger):
+              self.logger.exception(e)
           else:
-            if(self.logger):
-              self.logger.error("Status Code: %d received, unable to process station data." %(stationReq.status_code))
-        except Exception,e:
-          if(self.logger):
-            self.logger.exception(e) 
-          
+            try:
+              if(stationReq.status_code == 200):
+                #if(self.logger):
+                #  self.logger.debug("Page rcvd: %s" % (stationReq.text))
+                parseResult = docExtract(self.pageDataDict, stationReq.text)
+                #Loop through and fixup the date to be ISO centric.
+                #for resultNfo in parseResult['results']:
+                #  isoDate = datetime.datetime.strptime(resultNfo['date'], "%Y-%m-%d")
+                #  resultNfo['date'] = isoDate.strftime("%Y-%m-%d")
+                if(parseResult):
+                  results[stationName] = parseResult
+
+                if(self.logger):
+                  self.logger.debug(results[stationName])
+              else:
+                if(self.logger):
+                  self.logger.error("Status Code: %d received, unable to process station data." %(stationReq.status_code))
+            except Exception,e:
+              if(self.logger):
+                self.logger.exception(e)
+    else:
+      if(self.logger):
+        self.logger.error("Error: %s when requesting page: %s" % (req.reason, self.baseUrl))
     return(results)
 
   """
