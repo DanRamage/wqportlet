@@ -327,8 +327,6 @@ class waterQualityAdvisory(object):
       #if(self.logger):
       #  self.logger.debug(req.text)
       securityParams = self.findSecurityParams(initDoc)
-      if self.logger:
-        self.logger.debug("security params: %s" % (securityParams))
       #These are the parameters that are used by the dot Net reuqest handler to insure someone isn't
       #trying to inject crap. The one thing that changes is the DropDownList1, this is the parameter
       #where the station of interest is set.
