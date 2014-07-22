@@ -980,8 +980,8 @@ class processDHECRainGauges:
 
 if __name__ == '__main__':
   try:
-    import psyco
-    psyco.full()
+    #import psyco
+    #psyco.full()
         
     parser = optparse.OptionParser()
     parser.add_option("-c", "--XMLConfigFile", dest="xmlConfigFile",
