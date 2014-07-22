@@ -1094,14 +1094,15 @@ class wqDataNMB2(wqDataAccess):
                          units='feet',
                          timezone='Local Time',
                          smoothData=False)
-      range = tideData['HH']['value'] - tideData['LL']['value']   
-      data['range'] =  range;
-    except WebFault, e:
-      if(self.logger != None):
-        self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      #2014-04-02 DWR
+      #ADded query retry in the noaaTideData object. We no longer throw the WebFault
+      #from the request, we retry the query based on the retries param.
+      if(tideData):
+        range = tideData['HH']['value'] - tideData['LL']['value']
+        data['range'] = range
     except Exception, e:
       if(self.logger != None):
-        self.logger.error("Error retrieving tide data. Error: %s" %(e))
+        self.logger.exception(e)
     
     if(self.logger != None):
       self.logger.debug(pformat(data))
@@ -1149,10 +1150,12 @@ class wqDataNMB3(wqDataAccess):
                          units='feet',
                          timezone='Local Time',
                          smoothData=False)
-      range = tideData['HH']['value'] - tideData['LL']['value']   
-      data['range'] =  range;
-    except WebFault, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      #2014-04-02 DWR
+      #ADded query retry in the noaaTideData object. We no longer throw the WebFault
+      #from the request, we retry the query based on the retries param.
+      if(tideData):
+        range = tideData['HH']['value'] - tideData['LL']['value']
+        data['range'] = range
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
     
@@ -1219,9 +1222,12 @@ class wqDataMB1(wqDataAccess):
                          units='feet',
                          timezone='Local Time',
                          smoothData=False)
-      data['lowFt'] = tideData['LL']['value']   
-    except WebFault, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      #2014-04-02 DWR
+      #ADded query retry in the noaaTideData object. We no longer throw the WebFault
+      #from the request, we retry the query based on the retries param.
+      if(tideData):
+        data['lowFt'] = tideData['LL']['value']
+
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
     
@@ -1456,11 +1462,14 @@ class wqDataMB4(wqDataAccess):
                          units='feet',
                          timezone='Local Time',
                          smoothData=False)
-      range = tideData['HH']['value'] - tideData['LL']['value']   
-      data['range'] =  range
-      data['highFt'] = tideData['HH']['value']
-    except WebFault, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+
+      #2014-04-02 DWR
+      #ADded query retry in the noaaTideData object. We no longer throw the WebFault
+      #from the request, we retry the query based on the retries param.
+      if(tideData):
+        range = tideData['HH']['value'] - tideData['LL']['value']
+        data['range'] =  range
+        data['highFt'] = tideData['HH']['value']
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
            
@@ -1535,11 +1544,13 @@ class wqDataSS(wqDataAccess):
                          units='feet',
                          timezone='Local Time',
                          smoothData=False)
-      range = tideData['HH']['value'] - tideData['LL']['value']   
-      data['range'] =  range
-      data['lowFt'] = tideData['LL']['value']
-    except WebFault, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      #2014-04-02 DWR
+      #ADded query retry in the noaaTideData object. We no longer throw the WebFault
+      #from the request, we retry the query based on the retries param.
+      if(tideData):
+        range = tideData['HH']['value'] - tideData['LL']['value']
+        data['range'] =  range
+        data['lowFt'] = tideData['LL']['value']
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
            
@@ -1614,11 +1625,13 @@ class wqDataGC(wqDataAccess):
                          units='feet',
                          timezone='Local Time',
                          smoothData=False)
-      range = tideData['HH']['value'] - tideData['LL']['value']   
-      data['range'] =  range
-      data['highFt'] = tideData['HH']['value']
-    except WebFault, e:
-      self.logger.error("Error retrieving tide data. Error: %s" %(e))
+      #2014-04-02 DWR
+      #ADded query retry in the noaaTideData object. We no longer throw the WebFault
+      #from the request, we retry the query based on the retries param.
+      if(tideData):
+        range = tideData['HH']['value'] - tideData['LL']['value']
+        data['range'] =  range
+        data['highFt'] = tideData['HH']['value']
     except Exception, e:
       self.logger.error("Error retrieving tide data. Error: %s" %(e))
            

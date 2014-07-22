@@ -218,6 +218,7 @@ class waterQualityAdvisory(object):
             jsonObj[line['Station']] = stationData
           
           dateVal = datetime.datetime.strptime(line['Inspection Date'], "%d-%b-%y")
+          #dateVal = datetime.datetime.strptime(line['Inspection Date'], "%m/%d/%Y")
           
           #timeVal = datetime.datetime.strptime(line['Insp Time'], "%H%M")          
           #dateVal += (' ' + timeVal.strftime("%H:%M:00"))
