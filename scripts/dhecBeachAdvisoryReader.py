@@ -1,5 +1,9 @@
 """
 Revisions
+Date: 2015-03-16
+Function: __scrapeResults
+Changes: Use the newly implemented SOAP response.
+
 Date: 2014-07-11
 Function: __scrapeResults
 Changes: Verify securityParams object is valid before attempting to use it.
@@ -22,9 +26,14 @@ import geojson
 import requests
 import socket 
 import datetime
+from pytz import timezone
+
 import csv
 from decimal import *
 import httplib
+
+from suds.client import Client
+from suds.xsd.doctor import Import, ImportDoctor
 
 def docExtract(srcMap,doc):
   """
@@ -189,6 +198,7 @@ class waterQualityAdvisory(object):
   """
   def createHistoricalJSON(self, inputFilename, outputFilename):
     waterQualityJson = None
+    """
     fieldNames = ["Station",
                   "Inspection Date",
                   "Insp Time",
@@ -199,6 +209,21 @@ class waterQualityAdvisory(object):
                   "Tide",
                   "Wind/Curr",
                   "Weather"]
+    """
+    fieldNames = [
+      "COLLECTION DATE",
+      "COLLECTOR",
+      "STATION",
+      "INSPECTION TIME",
+      "LABSAMPLENUMBER",
+      "ETCOCSIGN",
+      "ETCOC",
+      "RAINFALL",
+      "WIND",
+      "TIDE",
+      "WEATHER",
+      "INSPECTIONTYPE"
+    ]
     try:
       inputFile = open(inputFilename, 'rU')
       dataFile = csv.DictReader(inputFile, fieldNames)
@@ -212,13 +237,17 @@ class waterQualityAdvisory(object):
       for line in dataFile:
         if(lineNum > 0):
           stationData = []
-          if(line['Station'] in jsonObj):
-            stationData = jsonObj[line['Station']]
+          if(line['STATION'] in jsonObj):
+          #if(line['Station'] in jsonObj):
+            stationData = jsonObj[line['STATION']]
+            #stationData = jsonObj[line['Station']]
           else:
-            jsonObj[line['Station']] = stationData
+            jsonObj[line['STATION']] = stationData
+            #jsonObj[line['Station']] = stationData
           
-          dateVal = datetime.datetime.strptime(line['Inspection Date'], "%d-%b-%y")
+          #dateVal = datetime.datetime.strptime(line['Inspection Date'], "%d-%b-%y")
           #dateVal = datetime.datetime.strptime(line['Inspection Date'], "%m/%d/%Y")
+          dateVal = datetime.datetime.strptime(line['COLLECTION DATE'], "%m/%d/%y %H:%M")
           
           #timeVal = datetime.datetime.strptime(line['Insp Time'], "%H%M")          
           #dateVal += (' ' + timeVal.strftime("%H:%M:00"))
@@ -312,6 +341,59 @@ class waterQualityAdvisory(object):
   Return:
     None
   """
+  #2015-03-16 DWR
+  #Implement function to use the SOAP response.
+  def __scrapeResults(self, stationNfoList):
+    results = {}
+    if self.logger:
+      logging.getLogger('suds.client').setLevel(logging.DEBUG)
+      self.logger.info("SOAP request for beach data.")
+    try:
+      schema_url = "http://gisweb01.dhec.sc.gov/beachservice/beachservice.asmx?schema=beach"
+      schema_import = Import(schema_url)
+      schema_doctor = ImportDoctor(schema_import)
+
+      soap_client = Client(url=self.baseUrl, doctor=schema_doctor)
+      if self.logger:
+        self.logger.debug("Client: %s" % (soap_client))
+      year = datetime.datetime.now();
+      response = soap_client.service.GetBeachData(year=year.year)
+
+      for diffgram in response.diffgram:
+        for DocumentElement in diffgram.DocumentElement:
+          for beachTable in DocumentElement.beachTable:
+            data = {
+              'date': "",
+              'value': ""
+            }
+            """
+            data = {
+              'id': "",
+              'date': "",
+              'value': "",
+              'sign': "",
+              'station': ""
+            }
+            """
+            data['station'] = beachTable.STATION[0]
+            if data['station'] not in results:
+              results[data['station']] = {'results': []}
+
+            #data['id'] = beachTable._id
+            #2014-05-13T00:00:00-04:00
+            date_parts = beachTable.START_DATE[0].split('T')
+            data['date'] = date_parts[0]
+            data['value'] = beachTable.ETCOC[0]
+            #data['sign'] = beachTable.ETCOC_MOD[0]
+            results[data['station']]['results'].append(data)
+
+      #with open("/Users/danramage/tmp/response.txt", "w") as outfile:
+      #  outfile.write(str(response))
+    except Exception, e:
+      if self.logger:
+        self.logger.exception(e)
+    return results
+  """
   def __scrapeResults(self, stationNfoList):
     if(self.logger):
       self.logger.info("Scraping web pages.")
@@ -379,7 +461,7 @@ class waterQualityAdvisory(object):
       if(self.logger):
         self.logger.error("Error: %s when requesting page: %s" % (req.reason, self.baseUrl))
     return(results)
-
+  """
   """
   Function: __scrapeResults
   Purpose: This is the function that loops through the station list, queries the webpage for the results creating the individual
@@ -395,8 +477,11 @@ class waterQualityAdvisory(object):
     if(self.logger):
       self.logger.info("Outputting JSON file.")    
     features = []
+    missing_stations = []
     for stationData in stationNfoList['features']:
       stationName = stationData['properties']['station']
+      if self.logger:
+        self.logger.debug("Station: %s" % (stationName))
       properties = {}
       properties['station'] = stationData['properties']['station']
       properties['desc'] = stationData['properties']['desc']
@@ -404,11 +489,18 @@ class waterQualityAdvisory(object):
       properties['epaid'] = stationData['properties']['epaid']
       properties['beach'] = stationData['properties']['beach']
       properties['len'] = stationData['properties']['len']
-      properties['sign'] = stationData['properties']['sign']      
-      properties['test'] = {'beachadvisories' : resultsData[stationName]['results']}
-      if(len(resultsData[stationName]['results']) == 0):
+      properties['sign'] = stationData['properties']['sign']
+      if stationName in resultsData:
+        properties['test'] = {'beachadvisories' : resultsData[stationName]['results']}
+        if(len(resultsData[stationName]['results']) == 0):
+          properties['message'] = "Bacteria sample data currently unavailable."
+      else:
         properties['message'] = "Bacteria sample data currently unavailable."
-      geometry = stationData['geometry']      
+        #2015-03-16 DWR
+        #Log out the missing stations. SInce an email is sent on any errors, we only
+        #want to send one email if we have multiple misses.
+        missing_stations.append(stationName)
+      geometry = stationData['geometry']
       feature = geojson.Feature(id=stationName, geometry=geometry, properties=properties)
       features.append(feature)
 
@@ -428,9 +520,16 @@ class waterQualityAdvisory(object):
           
       #After the individual station file is written, we reset the properties['test']['beachadvisories'] to contain
       #only the latest sample data.
-      if(len(resultsData[stationName]['results'])):
-        properties['test']['beachadvisories'] = resultsData[stationName]['results'][-1]
-     
+      if stationName in resultsData:
+        if(len(resultsData[stationName]['results'])):
+          properties['test']['beachadvisories'] = resultsData[stationName]['results'][-1]
+    #2015-03-16 DWR
+    #Log out the missing stations. SInce an email is sent on any errors, we only
+    #want to send one email if we have multiple misses.
+    if len(missing_stations):
+      if self.logger:
+        self.logger.error("Stations: %s not in results data." % (" ,".join(missing_stations)))
+
     collection = geojson.FeatureCollection(features=features)
     try:
       fullPath = "%s/beachAdvisoryResults.json" % (jsonOutputFilepath)
