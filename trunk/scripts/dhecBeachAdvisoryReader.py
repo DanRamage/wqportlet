@@ -356,42 +356,47 @@ class waterQualityAdvisory(object):
       soap_client = Client(url=self.baseUrl, doctor=schema_doctor)
       if self.logger:
         self.logger.debug("Client: %s" % (soap_client))
-      year = datetime.datetime.now();
-      response = soap_client.service.GetBeachData(year=year.year)
+      for year_cnt in range(0,2):
+        year = datetime.datetime.now();
+        if self.logger:
+          self.logger.debug("SOAP GetBeachData request for year: %d" % (year.year - year_cnt))
+        response = soap_client.service.GetBeachData(year=year.year - year_cnt)
 
-      for diffgram in response.diffgram:
-        for DocumentElement in diffgram.DocumentElement:
-          for beachTable in DocumentElement.beachTable:
-            data = {
-              'date': "",
-              'value': ""
-            }
-            """
-            data = {
-              'id': "",
-              'date': "",
-              'value': "",
-              'sign': "",
-              'station': ""
-            }
-            """
-            data['station'] = beachTable.STATION[0]
-            if data['station'] not in results:
-              results[data['station']] = {'results': []}
+        for diffgram in response.diffgram:
+          for DocumentElement in diffgram.DocumentElement:
+            for beachTable in DocumentElement.beachTable:
+              data = {
+                'date': "",
+                'value': ""
+              }
+              """
+              data = {
+                'id': "",
+                'date': "",
+                'value': "",
+                'sign': "",
+                'station': ""
+              }
+              """
+              data['station'] = beachTable.STATION[0]
+              if data['station'] not in results:
+                results[data['station']] = {'results': []}
 
-            #data['id'] = beachTable._id
-            #2014-05-13T00:00:00-04:00
-            date_parts = beachTable.START_DATE[0].split('T')
-            data['date'] = date_parts[0]
-            data['value'] = beachTable.ETCOC[0]
-            #data['sign'] = beachTable.ETCOC_MOD[0]
-            results[data['station']]['results'].append(data)
+              #data['id'] = beachTable._id
+              #2014-05-13T00:00:00-04:00
+              date_parts = beachTable.START_DATE[0].split('T')
+              data['date'] = date_parts[0]
+              data['value'] = beachTable.ETCOC[0]
+              #data['sign'] = beachTable.ETCOC_MOD[0]
+              results[data['station']]['results'].append(data)
 
-      #with open("/Users/danramage/tmp/response.txt", "w") as outfile:
-      #  outfile.write(str(response))
+        #with open("/Users/danramage/tmp/response.txt", "w") as outfile:
+        #  outfile.write(str(response))
     except Exception, e:
       if self.logger:
         self.logger.exception(e)
+    if self.logger:
+      self.logger.debug("SOAP request completed.")
     return results
   """
   def __scrapeResults(self, stationNfoList):
@@ -495,6 +500,7 @@ class waterQualityAdvisory(object):
         if(len(resultsData[stationName]['results']) == 0):
           properties['message'] = "Bacteria sample data currently unavailable."
       else:
+        properties['test'] = {'beachadvisories' : []}
         properties['message'] = "Bacteria sample data currently unavailable."
         #2015-03-16 DWR
         #Log out the missing stations. SInce an email is sent on any errors, we only
