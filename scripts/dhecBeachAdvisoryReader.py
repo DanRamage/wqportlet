@@ -356,8 +356,8 @@ class waterQualityAdvisory(object):
       soap_client = Client(url=self.baseUrl, doctor=schema_doctor)
       if self.logger:
         self.logger.debug("Client: %s" % (soap_client))
-      for year_cnt in range(0,2):
-        year = datetime.datetime.now();
+      for year_cnt in range(1, -1, -1):
+        year = datetime.datetime.now()
         if self.logger:
           self.logger.debug("SOAP GetBeachData request for year: %d" % (year.year - year_cnt))
         response = soap_client.service.GetBeachData(year=year.year - year_cnt)
